@@ -35,6 +35,8 @@ Calendar event ──► Start capture (desktop/mobile/upload)
 
 ## MVP scope (Phase 1)
 
+> **Update:** Phase 1 is now a native iPhone app (SwiftUI) with no bot and fully on-device capture, transcription and AI notes. It uses Apple speech recognition and Apple Intelligence where available. See [ios/README.md](../ios/README.md). The table below is the original web-first plan, kept for reference.
+
 | # | Feature | Notes |
 |---|---|---|
 | 1 | Upload or record audio (browser mic + tab audio) | Web app first; desktop app comes later |
