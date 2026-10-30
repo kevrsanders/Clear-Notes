@@ -18,7 +18,7 @@ struct MeetingInsights: Equatable, Sendable {
 /// Turns a transcript and the user's own notes into a summary, decisions and suggested actions.
 protocol NotesEnhancer: Sendable {
     var sourceName: String { get }
-    func enhance(segments: [TranscriptSegment], userNotes: String) async throws -> MeetingInsights
+    func enhance(segments: [TranscriptSegment], speakers: [Speaker], userNotes: String) async throws -> MeetingInsights
 }
 
 enum NotesEnhancers {

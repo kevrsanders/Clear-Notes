@@ -21,4 +21,11 @@ extension TimeInterval {
         let rest = minutes % 60
         return rest == 0 ? "\(hours) hr" : "\(hours) hr \(rest) min"
     }
+
+    /// "34m", "2h 14m".
+    var compactDurationString: String {
+        let minutes = Int((self / 60).rounded())
+        if minutes < 60 { return "\(minutes)m" }
+        return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
+    }
 }

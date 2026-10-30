@@ -13,6 +13,7 @@ final class HeuristicEnhancerTests: XCTestCase {
     func testExtractsActionWithOwnerAndDueDate() async throws {
         let insights = try await enhancer.enhance(
             segments: segments("Thanks everyone. Priya will send the revised budget by Friday."),
+            speakers: [],
             userNotes: ""
         )
         XCTAssertEqual(insights.actions.count, 1)
@@ -24,6 +25,7 @@ final class HeuristicEnhancerTests: XCTestCase {
     func testExtractsDecisionsSeparatelyFromActions() async throws {
         let insights = try await enhancer.enhance(
             segments: segments("We agreed to move the launch to March.", "Tom needs to update the risk log."),
+            speakers: [],
             userNotes: ""
         )
         XCTAssertEqual(insights.decisions, ["We agreed to move the launch to March."])
@@ -45,6 +47,7 @@ final class HeuristicEnhancerTests: XCTestCase {
     func testMarkedNoteLinesBecomeActionsAndDecisions() async throws {
         let insights = try await enhancer.enhance(
             segments: [],
+            speakers: [],
             userNotes: "Action: [2:10] Book the boardroom\nDecision: Use the new template\nGeneral chat"
         )
         XCTAssertEqual(insights.actions.map(\.task), ["[2:10] Book the boardroom"])
@@ -54,6 +57,7 @@ final class HeuristicEnhancerTests: XCTestCase {
     func testDuplicateActionsAreMerged() async throws {
         let insights = try await enhancer.enhance(
             segments: segments("Can you send the slides?", "can you send the slides?"),
+            speakers: [],
             userNotes: ""
         )
         XCTAssertEqual(insights.actions.count, 1)
@@ -62,5 +66,37 @@ final class HeuristicEnhancerTests: XCTestCase {
     func testSummaryPrefersUserNotes() {
         let summary = HeuristicEnhancer.summary(segments: [], userNotes: "Budget is on track\n- Hiring paused")
         XCTAssertEqual(summary, "- Budget is on track\n- Hiring paused")
+    }
+
+    func testFirstPersonCommitmentIsOwnedByNamedSpeaker() async throws {
+        var segment = TranscriptSegment(start: 0, end: 5, text: "I'll send the revised page list by Friday.")
+        segment.speakerID = "S1"
+        let insights = try await enhancer.enhance(
+            segments: [segment],
+            speakers: [Speaker(id: "S1", number: 1, name: "Priya")],
+            userNotes: ""
+        )
+        XCTAssertEqual(insights.actions.first?.owner, "Priya")
+    }
+
+    func testUnnamedSpeakerIsNotUsedAsOwner() async throws {
+        var segment = TranscriptSegment(start: 0, end: 5, text: "I'll update the risk log.")
+        segment.speakerID = "S2"
+        let insights = try await enhancer.enhance(
+            segments: [segment],
+            speakers: [Speaker(id: "S2", number: 2)],
+            userNotes: ""
+        )
+        XCTAssertEqual(insights.actions.count, 1)
+        XCTAssertNil(insights.actions.first?.owner)
+    }
+
+    func testCuesMatchWholeWordsOnly() async throws {
+        let insights = try await enhancer.enhance(
+            segments: segments("The taxi will arrive at noon."),
+            speakers: [],
+            userNotes: ""
+        )
+        XCTAssertTrue(insights.actions.isEmpty)
     }
 }

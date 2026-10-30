@@ -5,6 +5,8 @@ import Speech
 struct RecordingResult {
     var duration: TimeInterval
     var segments: [TranscriptSegment]
+    /// Temporary audio for speaker separation, if it was captured.
+    var audioFileName: String?
 }
 
 enum RecorderError: LocalizedError {
@@ -27,11 +29,14 @@ enum RecorderError: LocalizedError {
     }
 }
 
-/// Captures microphone audio and transcribes it live, without saving audio.
+/// Captures microphone audio and transcribes it live.
 ///
 /// Speech is recognised in short chunks. A chunk ends at a natural pause (or after
 /// `maxChunkLength`) and becomes a timestamped transcript segment. Restarting the
 /// recogniser like this keeps long meetings going and gives the transcript timestamps.
+///
+/// When speaker identification is on, a 16 kHz mono copy of the audio is written to a
+/// temporary file for speaker separation. It is deleted once speakers are identified.
 @MainActor
 @Observable
 final class MeetingRecorder {
@@ -43,6 +48,7 @@ final class MeetingRecorder {
         var start: TimeInterval
         var end: TimeInterval?
         var text = ""
+        var words: [TimedWord] = []
     }
 
     private(set) var state: State = .idle
@@ -67,6 +73,7 @@ final class MeetingRecorder {
     private var resumedAt: Date?
     private var ticker: Timer?
     private var interruptionObserver: NSObjectProtocol?
+    private var audioFileName: String?
 
     private var currentTime: TimeInterval {
         accumulated + (resumedAt.map { Date().timeIntervalSince($0) } ?? 0)
@@ -84,7 +91,7 @@ final class MeetingRecorder {
 
     // MARK: - Controls
 
-    func start(requireOnDevice: Bool, locale: Locale = .current) throws {
+    func start(requireOnDevice: Bool, captureAudioForSpeakers: Bool, locale: Locale = .current) throws {
         guard state == .idle else { return }
 
         guard let recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(),
@@ -110,6 +117,14 @@ final class MeetingRecorder {
         accumulated = 0
         elapsed = 0
 
+        if captureAudioForSpeakers {
+            let name = RecordingStore.newFileName()
+            // Speaker separation is optional: carry on without it if the file can't be created.
+            if (try? pipe.startAudioFile(at: RecordingStore.url(for: name), inputFormat: format)) != nil {
+                audioFileName = name
+            }
+        }
+
         pipe.onLevel = { [weak self] level in
             Task { @MainActor in self?.push(level: level) }
         }
@@ -119,6 +134,9 @@ final class MeetingRecorder {
             try engine.start()
         } catch {
             input.removeTap(onBus: 0)
+            pipe.finishAudioFile()
+            RecordingStore.delete(audioFileName)
+            audioFileName = nil
             throw error
         }
 
@@ -152,7 +170,7 @@ final class MeetingRecorder {
     /// Stops capture and waits briefly for the recogniser to deliver its final text.
     func stop() async -> RecordingResult {
         guard state == .recording || state == .paused else {
-            return RecordingResult(duration: accumulated, segments: segments)
+            return RecordingResult(duration: accumulated, segments: segments, audioFileName: nil)
         }
         if state == .recording {
             chunks[currentChunk]?.end = currentTime
@@ -162,6 +180,7 @@ final class MeetingRecorder {
         state = .stopping
         pipe.swap(to: nil)?.endAudio()
         teardownAudio()
+        pipe.finishAudioFile()
 
         let deadline = Date().addingTimeInterval(3)
         while !chunks.isEmpty && Date() < deadline {
@@ -176,7 +195,9 @@ final class MeetingRecorder {
 
         state = .idle
         elapsed = accumulated
-        return RecordingResult(duration: accumulated, segments: segments)
+        let fileName = audioFileName
+        audioFileName = nil
+        return RecordingResult(duration: accumulated, segments: segments, audioFileName: fileName)
     }
 
     func discard() {
@@ -185,6 +206,9 @@ final class MeetingRecorder {
         tasks = [:]
         chunks = [:]
         if state != .idle { teardownAudio() }
+        pipe.finishAudioFile()
+        RecordingStore.delete(audioFileName)
+        audioFileName = nil
         state = .idle
     }
 
@@ -205,8 +229,8 @@ final class MeetingRecorder {
         chunks[id] = Chunk(start: currentTime)
         lastSpeechAt = currentTime
 
-        tasks[id] = pipe.startTask(recognizer: recognizer, request: request) { [weak self] text, isFinished in
-            Task { @MainActor in self?.handle(chunk: id, text: text, isFinished: isFinished) }
+        tasks[id] = pipe.startTask(recognizer: recognizer, request: request) { [weak self] text, words, isFinished in
+            Task { @MainActor in self?.handle(chunk: id, text: text, words: words, isFinished: isFinished) }
         }
         pipe.swap(to: request)?.endAudio()
     }
@@ -216,7 +240,11 @@ final class MeetingRecorder {
         beginChunk()
     }
 
-    private func handle(chunk id: Int, text: String?, isFinished: Bool) {
+    private func handle(chunk id: Int, text: String?, words: [TimedWord], isFinished: Bool) {
+        if let start = chunks[id]?.start, !words.isEmpty {
+            // Word times are relative to the start of this chunk's audio.
+            chunks[id]?.words = words.map { TimedWord(text: $0.text, start: start + $0.start, end: start + $0.end) }
+        }
         if let text, !text.isEmpty, chunks[id]?.text != text {
             chunks[id]?.text = text
             if id == currentChunk {
@@ -235,7 +263,12 @@ final class MeetingRecorder {
 
         let text = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
-            segments.append(TranscriptSegment(start: chunk.start, end: chunk.end ?? currentTime, text: text))
+            segments.append(TranscriptSegment(
+                start: chunk.start,
+                end: chunk.end ?? currentTime,
+                text: text,
+                words: chunk.words.isEmpty ? nil : chunk.words
+            ))
             segments.sort { $0.start < $1.start }
         }
 
@@ -316,6 +349,11 @@ final class MeetingRecorder {
 private final class RecognitionPipe: @unchecked Sendable {
     private let lock = NSLock()
     private var request: SFSpeechAudioBufferRecognitionRequest?
+    private var audioFile: AVAudioFile?
+    private var converter: AVAudioConverter?
+    private let speakerFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false
+    )!
     /// Set before the tap is installed and not changed while audio is flowing.
     var onLevel: (@Sendable (Float) -> Void)?
 
@@ -329,6 +367,33 @@ private final class RecognitionPipe: @unchecked Sendable {
         return old
     }
 
+    /// Starts writing a 16 kHz mono 16-bit copy of the audio, the format speaker separation expects.
+    func startAudioFile(at url: URL, inputFormat: AVAudioFormat) throws {
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 16_000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+        ]
+        let file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        RecordingStore.protect(url)
+        let converter = AVAudioConverter(from: inputFormat, to: speakerFormat)
+        lock.lock()
+        audioFile = file
+        self.converter = converter
+        lock.unlock()
+    }
+
+    /// Closes the audio file. AVAudioFile finalises the file when it is released.
+    func finishAudioFile() {
+        lock.lock()
+        audioFile = nil
+        converter = nil
+        lock.unlock()
+    }
+
     func installTap(on node: AVAudioInputNode, format: AVAudioFormat) {
         node.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
             self?.receive(buffer)
@@ -338,20 +403,48 @@ private final class RecognitionPipe: @unchecked Sendable {
     func startTask(
         recognizer: SFSpeechRecognizer,
         request: SFSpeechAudioBufferRecognitionRequest,
-        handler: @escaping @Sendable (_ text: String?, _ isFinished: Bool) -> Void
+        handler: @escaping @Sendable (_ text: String?, _ words: [TimedWord], _ isFinished: Bool) -> Void
     ) -> SFSpeechRecognitionTask {
         recognizer.recognitionTask(with: request) { result, error in
             let isFinished = (result?.isFinal ?? false) || error != nil
-            handler(result?.bestTranscription.formattedString, isFinished)
+            let words = result?.bestTranscription.segments.map {
+                TimedWord(text: $0.substring, start: $0.timestamp, end: $0.timestamp + $0.duration)
+            } ?? []
+            handler(result?.bestTranscription.formattedString, words, isFinished)
         }
     }
 
     private func receive(_ buffer: AVAudioPCMBuffer) {
         lock.lock()
         let current = request
+        let file = audioFile
+        let converter = converter
         lock.unlock()
         current?.append(buffer)
+        if let file, let converter {
+            write(buffer, using: converter, to: file)
+        }
         onLevel?(Self.normalisedLevel(of: buffer))
+    }
+
+    private func write(_ buffer: AVAudioPCMBuffer, using converter: AVAudioConverter, to file: AVAudioFile) {
+        let ratio = speakerFormat.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
+        guard let output = AVAudioPCMBuffer(pcmFormat: speakerFormat, frameCapacity: capacity) else { return }
+        var supplied = false
+        var error: NSError?
+        _ = converter.convert(to: output, error: &error) { _, status in
+            if supplied {
+                status.pointee = .noDataNow
+                return nil
+            }
+            supplied = true
+            status.pointee = .haveData
+            return buffer
+        }
+        if error == nil && output.frameLength > 0 {
+            try? file.write(from: output)
+        }
     }
 
     private static func normalisedLevel(of buffer: AVAudioPCMBuffer) -> Float {

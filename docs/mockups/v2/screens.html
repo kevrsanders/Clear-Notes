@@ -1,0 +1,336 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,sans-serif;-webkit-font-smoothing:antialiased;background:#E4E5EC}
+body.dk{background:#1b1c22}
+.row{display:flex;gap:40px;padding:40px;width:max-content}
+
+.theme-light{--bg:#F6F6FA;--surface:#FFFFFF;--raised:#FFFFFF;--stroke:rgba(15,15,30,.06);--t1:#0E0E14;--t2:#6B6B78;--t3:#A3A3AF;--brand:#6A5CFF;--success:#22C55E;--warning:#F59E0B;
+ --g1:rgba(139,123,255,.28);--g2:rgba(90,184,255,.22);--g3:rgba(255,179,138,.20);--shadow:0 8px 24px rgba(30,30,60,.06);
+ --glass:rgba(255,255,255,.62);--glassStroke:rgba(255,255,255,.8);--glassShadow:0 8px 30px rgba(30,30,60,.12);--fill:rgba(14,14,20,.06);--thumb:#FFFFFF;--thumbShadow:0 2px 8px rgba(20,20,40,.10);--tabOn:rgba(120,120,128,.16)}
+.theme-dark{--bg:#0A0A0F;--surface:#16161D;--raised:#1E1E27;--stroke:rgba(255,255,255,.07);--t1:#F4F4F8;--t2:#9A9AA8;--t3:#5C5C68;--brand:#8E83FF;--success:#30D158;--warning:#FFB020;
+ --g1:rgba(139,123,255,.22);--g2:rgba(90,184,255,.16);--g3:rgba(255,179,138,.10);--shadow:none;
+ --glass:rgba(42,42,54,.58);--glassStroke:rgba(255,255,255,.10);--glassShadow:0 8px 30px rgba(0,0,0,.45);--fill:rgba(255,255,255,.08);--thumb:rgba(255,255,255,.14);--thumbShadow:none;--tabOn:rgba(255,255,255,.12)}
+
+.phone{width:393px;height:852px;position:relative;overflow:hidden;background:var(--bg);color:var(--t1)}
+.grad{background:linear-gradient(135deg,#7C5CFF,#4F7BFF)}
+.rgrad{background:linear-gradient(135deg,#FF7A59,#FF3D71)}
+
+/* glow */
+.glow{position:absolute;left:0;right:0;top:0;height:380px;pointer-events:none;overflow:hidden}
+.glow i{position:absolute;border-radius:50%;filter:blur(70px)}
+.glow .a{width:300px;height:260px;left:-90px;top:-80px;background:var(--g1)}
+.glow .b{width:280px;height:240px;right:-90px;top:-60px;background:var(--g2)}
+.glow .c{width:260px;height:180px;left:90px;top:110px;background:var(--g3)}
+
+/* status bar */
+.sb{position:absolute;top:0;left:0;right:0;height:54px;display:flex;justify-content:space-between;align-items:center;padding:4px 30px 0 46px;font-weight:600;font-size:17px;z-index:60;color:var(--t1)}
+.sbr{display:flex;gap:6px;align-items:center}
+.island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:124px;height:36px;background:#000;border-radius:20px}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:138px;height:5px;border-radius:3px;background:var(--t1);z-index:70}
+
+/* glass */
+.glass{background:var(--glass);backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);border:1px solid var(--glassStroke);box-shadow:var(--glassShadow)}
+.gcirc{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--t1);flex:none}
+
+/* tab bar */
+.tabbar{position:absolute;left:20px;right:20px;bottom:26px;height:62px;border-radius:999px;display:flex;padding:5px;z-index:50}
+.tb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10.5px;font-weight:600;color:var(--t1);border-radius:999px;position:relative}
+.tb.on{background:var(--tabOn);color:var(--brand)}
+.tbadge{position:absolute;top:3px;left:calc(50% + 6px);background:#FF3B30;color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px}
+.edge{position:absolute;left:0;right:0;bottom:0;height:170px;background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--bg) 92%,transparent) 70%);z-index:40;pointer-events:none}
+.edgeTop{position:absolute;left:0;right:0;top:0;height:120px;background:linear-gradient(to top,transparent,color-mix(in srgb,var(--bg) 94%,transparent) 55%);z-index:45;pointer-events:none}
+
+/* layout */
+.content{position:absolute;top:54px;left:0;right:0;bottom:0;padding:0 20px}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--t2)}
+.display{font-size:34px;font-weight:700;letter-spacing:-.6px;line-height:41px}
+.title{font-size:28px;font-weight:700;letter-spacing:-.4px;line-height:34px}
+.headline{font-size:17px;font-weight:600;line-height:22px}
+.body{font-size:17px;line-height:23px}
+.sub{font-size:15px;line-height:20px;color:var(--t2)}
+.foot{font-size:13px;line-height:18px;color:var(--t2)}
+
+.card{background:var(--surface);border:1px solid var(--stroke);border-radius:24px;box-shadow:var(--shadow);padding:16px}
+.ch{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.ch h3{font-size:17px;font-weight:600;flex:1}
+.gi{width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+.ti{width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--tint);background:color-mix(in srgb,var(--tint) 14%,transparent);flex:none}
+.chip{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:999px;font-size:13px;font-weight:500;color:var(--tint,var(--t2));background:color-mix(in srgb,var(--tint,var(--t2)) 13%,transparent);white-space:nowrap}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+
+.av{border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;flex:none;letter-spacing:0}
+.av.un{background:color-mix(in srgb,var(--c) 16%,transparent);color:var(--c);border:1.5px dashed var(--c)}
+.stack{display:flex}
+.stack .av{margin-left:-8px;box-shadow:0 0 0 2px var(--surface)}
+.stack .av:first-child{margin-left:0}
+.more{background:var(--fill);color:var(--t2)!important}
+
+.pills{display:flex;border-radius:999px;padding:4px;height:44px}
+.pill{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:999px;font-size:14px;font-weight:600;color:var(--t2)}
+.pill.on{background:var(--thumb);box-shadow:var(--thumbShadow);color:var(--t1)}
+.pbadge{min-width:18px;height:18px;border-radius:9px;font-size:11px;font-weight:700;color:#fff;display:flex;align-items:center;justify-content:center;padding:0 5px}
+
+.btnP{height:34px;padding:0 14px;border-radius:999px;color:#fff;font-size:15px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.btnS{height:34px;padding:0 14px;border-radius:999px;background:var(--fill);color:var(--t1);font-size:15px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+
+.bl{display:flex;gap:12px;font-size:17px;line-height:23px;margin-top:10px}
+.bl:first-child{margin-top:0}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--brand);margin-top:9px;flex:none}
+.num{width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;color:var(--brand);background:color-mix(in srgb,var(--brand) 14%,transparent);flex:none;margin-top:1px}
+
+.navbar{position:absolute;top:54px;left:0;right:0;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:55}
+.navr{display:flex;gap:10px}
+.navtitle{position:absolute;left:84px;right:124px;text-align:center;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.check{width:24px;height:24px;border-radius:50%;border:1.8px solid var(--t3);flex:none}
+.checked{width:24px;height:24px;border-radius:50%;background:var(--success);display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+.acard{display:flex;gap:12px;align-items:flex-start}
+.owner{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px 0 3px;border-radius:999px;background:var(--fill);font-size:13px;font-weight:500;color:var(--t1)}
+.aibadge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-radius:999px;color:#fff;font-size:11px;font-weight:700;letter-spacing:.4px}
+.skel{height:12px;border-radius:6px;background:var(--fill)}
+</style></head><body>
+<div class="row" id="root"></div>
+<script>
+const P={
+search:'<circle cx="11" cy="11" r="7.5"/><path d="M20.5 20.5l-4.2-4.2"/>',
+mic:'<path d="M12 2.5a3 3 0 0 0-3 3v6.5a3 3 0 0 0 6 0V5.5a3 3 0 0 0-3-3z"/><path d="M18.5 10.5v1.5a6.5 6.5 0 0 1-13 0v-1.5"/><path d="M12 18.5v3"/>',
+lock:'<rect x="4.5" y="10.5" width="15" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+users:'<path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35"/><path d="M15.5 4.65a3.5 3.5 0 0 1 0 6.7"/>',
+back:'<path d="M15 5l-7 7 7 7"/>',
+chev:'<path d="M9 5l7 7-7 7"/>',
+share:'<path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v6.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V12"/>',
+more:'<circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/>',
+check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+x:'<path d="M6 6l12 12M18 6L6 18"/>',
+cal:'<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+plus:'<path d="M12 5v14M5 12h14"/>',
+flag:'<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+pencil:'<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/>',
+user:'<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>',
+quote:'<path d="M10 7H6.5A1.5 1.5 0 0 0 5 8.5V12h5V7zM10 12c0 3-1.5 5-4 5.5M19 7h-3.5A1.5 1.5 0 0 0 14 8.5V12h5V7zM19 12c0 3-1.5 5-4 5.5"/>',
+link:'<path d="M10 13.5a4.5 4.5 0 0 0 6.4.4l2.6-2.6a4.5 4.5 0 0 0-6.4-6.4l-1.4 1.4"/><path d="M14 10.5a4.5 4.5 0 0 0-6.4-.4L5 12.7a4.5 4.5 0 0 0 6.4 6.4l1.4-1.4"/>',
+note:'<path d="M14 3H7a2.5 2.5 0 0 0-2.5 2.5v13A2.5 2.5 0 0 0 7 21h10a2.5 2.5 0 0 0 2.5-2.5V8.5L14 3z"/><path d="M14 3v5.5h5.5M8.5 13h7M8.5 17h5"/>',
+decide:'<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16.5 9.5"/>',
+listc:'<path d="M10 6.5h10M10 12h10M10 17.5h10"/><path d="M3.5 6.5l1.5 1.5 2.5-3M3.5 12l1.5 1.5 2.5-3M3.5 17.5l1.5 1.5 2.5-3"/>',
+gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+wave:'<path d="M3 10v4M7 7v10M11 4v16M15 8v8M19 6v12"/>',
+sparkle:'<path d="M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9L11 17.5l-1.9-5.1L4 10.5l5.1-1.9z" fill="currentColor" stroke="none"/><path d="M18.5 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" fill="currentColor" stroke="none"/>',
+pause:'<rect x="6.5" y="5" width="3.6" height="14" rx="1.2" fill="currentColor" stroke="none"/><rect x="13.9" y="5" width="3.6" height="14" rx="1.2" fill="currentColor" stroke="none"/>',
+stop:'<rect x="6" y="6" width="12" height="12" rx="3" fill="currentColor" stroke="none"/>',
+person2:'<circle cx="12" cy="8" r="4" fill="currentColor" stroke="none"/><path d="M4 20.5a8 8 0 0 1 16 0z" fill="currentColor" stroke="none"/>',
+filter:'<path d="M4 6h16M7 12h10M10 18h4"/>',
+};
+const ic=(n,s=20,w=1.9)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" style="flex:none">${P[n]}</svg>`;
+
+const SP={P:{n:'Priya',c:'#7C5CFF'},T:{n:'Tom',c:'#14B8A6'},S:{n:'Sam',c:'#FB923C'},U:{n:'Speaker 4',c:'#EC4899',num:4},A:{n:'Alex',c:'#3B82F6'}};
+const av=(k,size=32)=>{const s=SP[k];const fs=Math.round(size*0.42);
+  if(s.num)return `<div class="av un" style="--c:${s.c};width:${size}px;height:${size}px;font-size:${fs}px">${s.num}</div>`;
+  return `<div class="av" style="background:${s.c};width:${size}px;height:${size}px;font-size:${fs}px">${s.n[0]}</div>`};
+
+const glow='<div class="glow"><i class="a"></i><i class="b"></i><i class="c"></i></div>';
+const statusBar=`<div class="sb"><span>9:41</span><div class="island"></div><span class="sbr">
+<svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.2c2.3 0 4.4.9 6 2.4l1.1-1.2A10.2 10.2 0 0 0 8 .5C5.3.5 2.8 1.5.9 3.4L2 4.6a8.6 8.6 0 0 1 6-2.4z"/><path d="M8 5.6c1.4 0 2.6.5 3.6 1.4l1.1-1.2A6.9 6.9 0 0 0 8 3.9c-1.8 0-3.4.7-4.7 1.9L4.4 7c1-.9 2.2-1.4 3.6-1.4z"/><path d="M8 9c.6 0 1.1.2 1.5.6L8 11.2 6.5 9.6C6.9 9.2 7.4 9 8 9z"/></svg>
+<svg width="27" height="13" viewBox="0 0 27 13" fill="currentColor"><rect x=".5" y=".5" width="23" height="12" rx="3.8" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="18" height="9" rx="2.3"/><path d="M25 4.5v4c.8-.3 1.3-1.1 1.3-2s-.5-1.7-1.3-2z" opacity=".4"/></svg></span></div>`;
+const homeInd='<div class="home"></div>';
+const tabbar=(sel)=>`<div class="edge"></div><div class="tabbar glass">
+<div class="tb ${sel==0?'on':''}">${ic('wave',24,2.1)}Meetings</div>
+<div class="tb ${sel==1?'on':''}">${ic('listc',24,2)}Actions<span class="tbadge">7</span></div>
+<div class="tb ${sel==2?'on':''}">${ic('gear',24,1.9)}Settings</div></div>`;
+const chip=(t,icn,tint)=>`<span class="chip" ${tint?`style="--tint:${tint}"`:''}>${icn?ic(icn,13,2.2):''}${t}</span>`;
+const pills=(items,sel)=>`<div class="pills glass">${items.map((it,i)=>{const [t,b]=Array.isArray(it)?it:[it];return `<div class="pill ${i==sel?'on':''}">${t}${b?`<span class="pbadge grad">${b}</span>`:''}</div>`}).join('')}</div>`;
+const navDetail=(title)=>`<div class="navbar"><div class="gcirc glass">${ic('back',20,2.2)}</div>${title?`<div class="navtitle">${title}</div>`:''}<div class="navr"><div class="gcirc glass">${ic('share',19,2)}</div><div class="gcirc glass">${ic('more',20)}</div></div></div>`;
+
+/* ---------- 1. Home ---------- */
+function home(){return `${glow}${statusBar}<div class="content">
+<div style="display:flex;justify-content:space-between;align-items:flex-end;padding-top:10px">
+ <div><div class="eyebrow">Thursday 30 October</div><div class="display" style="margin-top:4px">Good morning</div></div>
+ <div class="av grad" style="width:40px;height:40px;margin-bottom:2px">${ic('person2',20)}</div></div>
+<div class="glass" style="margin-top:16px;height:44px;border-radius:999px;display:flex;align-items:center;gap:8px;padding:0 14px;color:var(--t2);font-size:16px">${ic('search',18,2.2)}Search meetings, people, actions</div>
+<div style="display:flex;gap:8px;margin-top:16px">
+ ${[['To review','3','AI suggestions',true],['Open','4','2 due this week'],['This week','3','2h 14m of meetings']].map(([l,n,h,b])=>`<div class="card" style="flex:1;padding:14px">
+  <div class="eyebrow" style="font-size:11px">${l}</div>
+  <div style="font-size:28px;font-weight:700;letter-spacing:-.4px;margin-top:4px;${b?'color:var(--brand)':''}">${n}</div>
+  <div class="foot" style="margin-top:2px">${h}</div></div>`).join('')}
+</div>
+<div class="eyebrow" style="margin:22px 4px 10px">Today</div>
+<div class="card">
+ <div style="display:flex;justify-content:space-between;align-items:center" class="foot"><span>10:02 · 34 min</span><span style="color:var(--t3)">${ic('lock',14,2.2)}</span></div>
+ <div class="headline" style="margin-top:6px">Website relaunch weekly check-in</div>
+ <div class="sub" style="margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Launch moved to March. Content audit is 80% complete, and new feature requests are paused until go-live.</div>
+ <div style="display:flex;align-items:center;gap:8px;margin-top:14px">
+  <div class="stack">${av('P',26)}${av('T',26)}${av('S',26)}<div class="av more" style="width:26px;height:26px;font-size:11px">+1</div></div>
+  <span class="foot" style="flex:1">Priya, Tom +2</span>${chip('3 actions','listc','var(--brand)')}</div>
+</div>
+<div class="card" style="margin-top:12px">
+ <div style="display:flex;justify-content:space-between;align-items:center" class="foot"><span>14:30 · 22 min</span>${chip('Processing','sparkle','var(--brand)')}</div>
+ <div class="headline" style="margin-top:6px">1:1 with Sam</div>
+ <div class="skel" style="margin-top:12px;width:92%"></div><div class="skel" style="margin-top:8px;width:64%"></div>
+</div>
+<div class="eyebrow" style="margin:22px 4px 10px">This week</div>
+<div class="card"><div class="foot">Tue · 09:15 · 1 hr 5 min</div><div class="headline" style="margin-top:6px">Quarterly budget review</div><div class="sub" style="margin-top:4px">Spend on track at 48% of the annual budget.</div></div>
+</div>
+<div style="position:absolute;left:50%;transform:translateX(-50%);bottom:104px;z-index:52;height:60px;border-radius:999px;display:flex;align-items:center;gap:10px;padding:0 26px 0 12px;color:#fff;font-size:17px;font-weight:600;box-shadow:0 12px 28px rgba(255,61,113,.42)" class="rgrad">
+ <div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center">${ic('mic',20,2.2)}</div>Record</div>
+${tabbar(0)}${homeInd}`}
+
+/* ---------- 2. Recording ---------- */
+function recording(){
+ const bars=[10,22,34,18,28,14];
+ return `<div style="position:absolute;inset:0;background:#07070B"></div>${statusBar}
+<div class="navbar"><div class="gcirc glass">${ic('x',18,2.4)}</div>
+ <div class="glass" style="height:36px;border-radius:999px;display:flex;align-items:center;gap:8px;padding:0 14px;font-size:14px;font-weight:600">
+  <span style="width:9px;height:9px;border-radius:50%;background:#FF3D71;box-shadow:0 0 0 4px rgba(255,61,113,.25)"></span>REC
+  <span style="color:var(--t3)">·</span><span style="display:flex;align-items:center;gap:5px;color:var(--t2);font-weight:500">${ic('lock',13,2.3)}On-device</span></div>
+ <div style="width:40px"></div></div>
+<div style="position:absolute;top:116px;left:0;right:0;height:210px;display:flex;align-items:center;justify-content:center">
+ <div style="position:absolute;width:340px;height:340px;border-radius:50%;background:radial-gradient(circle,rgba(255,61,113,.42),rgba(255,122,89,.14) 45%,transparent 70%)"></div>
+ <div class="rgrad" style="position:absolute;width:204px;height:204px;border-radius:50%;opacity:.14"></div>
+ <div class="rgrad" style="position:absolute;width:160px;height:160px;border-radius:50%;opacity:.38"></div>
+ <div class="rgrad" style="position:absolute;width:118px;height:118px;border-radius:50%;box-shadow:0 12px 40px rgba(255,61,113,.55),inset 0 2px 0 rgba(255,255,255,.35);display:flex;align-items:center;justify-content:center;gap:5px">
+  ${bars.map(h=>`<i style="display:block;width:5px;height:${h}px;border-radius:3px;background:rgba(255,255,255,.92)"></i>`).join('')}</div>
+</div>
+<div style="position:absolute;top:330px;left:0;right:0;text-align:center;font-size:64px;font-weight:100;font-variant-numeric:tabular-nums;letter-spacing:1px;line-height:72px">12:47</div>
+<div style="position:absolute;top:418px;left:20px;right:20px">${pills(['Transcript','Notes'],0)}</div>
+<div style="position:absolute;top:474px;left:0;right:0;display:flex;justify-content:center;gap:6px;align-items:center;color:var(--t2);font-size:13px">${ic('sparkle',14)}Speakers are identified when you finish</div>
+<div style="position:absolute;top:500px;left:20px;right:20px;height:228px;overflow:hidden;-webkit-mask-image:linear-gradient(to bottom,transparent 0%,rgba(0,0,0,.25) 18%,#000 48%,#000 100%);display:flex;flex-direction:column;justify-content:flex-end;gap:14px">
+ ${[['9:58','Okay, so on the content audit we’re about eighty percent through the pages now.'],['10:31','Not a final one. I’ll send the revised page list by Friday.'],['11:05','On timing, I think we agreed to move the launch to March so testing isn’t rushed.'],['11:49','I’ll update the risk log with the new date.']].map(([t,x])=>`<div style="display:flex;gap:12px"><span style="width:40px;flex:none;font-size:12px;color:var(--t3);font-variant-numeric:tabular-nums;padding-top:4px">${t}</span><span class="body">${x}</span></div>`).join('')}
+ <div style="display:flex;gap:12px"><span style="width:40px;flex:none;font-size:12px;color:#FF5C7A;font-weight:600;padding-top:4px">now</span><span class="body" style="color:var(--t2)">And can someone check when the hosting contract<span style="display:inline-block;width:2px;height:19px;background:#FF3D71;margin-left:2px;vertical-align:-3px;border-radius:1px"></span></span></div>
+</div>
+<div class="glass" style="position:absolute;left:20px;right:20px;bottom:34px;height:76px;border-radius:999px;display:flex;align-items:center;gap:12px;padding:0 10px">
+ <div style="width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center">${ic('pause',24)}</div>
+ <div class="rgrad" style="flex:1;height:56px;border-radius:999px;display:flex;align-items:center;justify-content:center;gap:10px;color:#fff;font-size:17px;font-weight:600;box-shadow:0 8px 22px rgba(255,61,113,.35)">${ic('stop',18)}Finish</div>
+</div>${homeInd}`}
+
+/* ---------- detail header (overview + processing) ---------- */
+function detailHeader(eyebrow,title,chips){return `<div class="eyebrow">${eyebrow}</div>
+<div class="title" style="margin-top:6px">${title}</div>
+<div class="chips" style="margin-top:12px">${chips}</div>`}
+
+const speakerStrip=`<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px"><span class="eyebrow">Speakers</span><span class="foot" style="color:var(--t3)">Tap to rename</span></div>
+<div style="display:flex;gap:18px">
+ ${['P','T','S'].map(k=>`<div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">${av(k,44)}<span style="font-size:13px;font-weight:500">${SP[k].n}</span></div>`).join('')}
+ <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:72px">${av('U',44)}<span style="font-size:13px;font-weight:500;color:var(--t2);margin-top:2px">Speaker 4</span><span style="font-size:12px;font-weight:600;color:var(--brand);margin-top:-3px">Tap to name</span></div>
+</div>`;
+
+/* ---------- 3. Overview ---------- */
+function overview(){return `${glow}${statusBar}${navDetail('')}<div class="content" style="top:110px">
+${detailHeader('Friday 30 October · 10:02','Website relaunch weekly check-in',chip('34 min','clock')+chip('4 speakers','users')+chip('On-device','lock','var(--brand)'))}
+${speakerStrip}
+<div style="margin-top:14px;border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--brand) 9%,transparent);color:var(--brand);font-size:15px;font-weight:500">${ic('sparkle',18)}<span style="flex:1">Name Speaker 4 to improve notes</span>${ic('chev',16,2.4)}</div>
+<div style="margin-top:16px">${pills(['Overview',['Actions',2],'Transcript','Notes'],0)}</div>
+<div class="card" style="margin-top:16px">
+ <div class="ch"><div class="gi grad">${ic('sparkle',16)}</div><h3>Summary</h3></div>
+ ${['Content audit is 80% complete; service pages are the main gap.','Launch moved to March to allow time for testing.','New feature requests paused until go-live.','Hosting contract renewal needs checking before December.'].map(t=>`<div class="bl"><span class="dot"></span><span>${t}</span></div>`).join('')}
+</div>
+<div class="card" style="margin-top:16px">
+ <div class="ch"><div class="ti" style="--tint:#22C55E">${ic('decide',16,2.2)}</div><h3>Decisions</h3></div>
+ <div class="bl"><span class="num">1</span><span>Move the launch to March.</span></div>
+ <div class="bl"><span class="num">2</span><span>Pause new feature requests until go-live.</span></div>
+</div>
+</div>${tabbar(0)}${homeInd}`}
+
+/* ---------- 4. Transcript ---------- */
+const turns=[
+ ['P','9:58','Okay, so on the content audit we’re about eighty percent through the pages now. The main gap is still the service pages.'],
+ ['T','10:24','Do we have a list of which service pages are left?'],
+ ['P','10:31','Not a final one. I’ll send the revised page list by Friday.',true],
+ ['S','11:05','On timing, I think we agreed to move the launch to March so testing isn’t rushed.'],
+ ['U','11:32','Agreed. And someone should check when the hosting contract renews.'],
+ ['T','11:49','I’ll update the risk log with the new date.'],
+];
+function turnHTML([k,t,x,hl]){const s=SP[k];return `<div style="display:flex;gap:12px;padding:${hl?'12px':'0 12px'};margin:0 -12px;border-radius:18px;${hl?'background:color-mix(in srgb,var(--brand) 9%,transparent);':''}">
+ ${av(k,32)}<div style="flex:1;min-width:0"><div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:15px;font-weight:600;color:${s.c}">${s.n}</span>${s.num?`<span style="font-size:12px;font-weight:600;color:var(--brand)">Tap to name</span>`:''}<span class="foot" style="color:var(--t3);margin-left:auto;font-variant-numeric:tabular-nums">${t}</span></div>
+ <div class="body" style="margin-top:3px">${x}</div>${hl?`<div style="margin-top:8px">${chip('Source of 1 action','quote','var(--brand)')}</div>`:''}</div></div>`}
+function stickyHeader(sel){return `${glow}${statusBar}<div class="edgeTop" style="height:190px"></div>${navDetail('Website relaunch weekly check-in')}
+<div style="position:absolute;top:112px;left:20px;right:20px;z-index:55">${pills(['Overview',['Actions',2],'Transcript','Notes'],sel)}</div>`}
+function transcript(){return `${stickyHeader(2)}<div class="content" style="top:172px;display:flex;flex-direction:column;gap:20px">
+${turns.map(turnHTML).join('')}</div>${tabbar(0)}${homeInd}`}
+
+/* ---------- 5. Naming sheet ---------- */
+function naming(){return `${transcript()}<div style="position:absolute;inset:0;background:rgba(0,0,0,.38);z-index:80"></div>
+<div style="position:absolute;left:8px;right:8px;bottom:8px;height:628px;border-radius:40px;background:var(--surface);z-index:90;padding:0 22px;box-shadow:0 -10px 40px rgba(0,0,0,.2);border:1px solid var(--stroke)">
+ <div style="width:36px;height:5px;border-radius:3px;background:var(--t3);opacity:.6;margin:8px auto 0"></div>
+ <div class="gcirc" style="position:absolute;right:16px;top:16px;width:32px;height:32px;background:var(--fill);color:var(--t2)">${ic('x',14,2.6)}</div>
+ <div style="display:flex;flex-direction:column;align-items:center;margin-top:14px">
+  <div class="av" style="width:72px;height:72px;font-size:30px;background:#EC4899;box-shadow:0 10px 24px rgba(236,72,153,.35)">4</div>
+  <div style="font-size:22px;font-weight:700;letter-spacing:-.3px;margin-top:12px">Who is Speaker 4?</div>
+  <div class="foot" style="margin-top:2px">Spoke 3 times · 1 min 12 s</div></div>
+ <div class="eyebrow" style="margin:16px 0 8px">They said</div>
+ ${[['11:32','“Agreed. And someone should check when the hosting contract renews.”'],['12:10','“We had the same problem last year, so let’s not leave it late.”']].map(([t,q])=>`<div style="background:var(--fill);border-radius:16px;padding:10px 14px;margin-bottom:8px"><div class="foot" style="color:var(--t3);font-variant-numeric:tabular-nums;font-size:12px">${t}</div><div style="font-size:15px;line-height:20px;font-style:italic;margin-top:1px">${q}</div></div>`).join('')}
+ <div style="display:flex;gap:8px;margin-top:8px">
+  <div style="flex:1;height:46px;border-radius:999px;background:var(--fill);display:flex;align-items:center;gap:8px;padding:0 16px;color:var(--t3);font-size:16px">${ic('user',18,2)}Enter a name</div>
+  <div class="btnP grad" style="height:46px;padding:0 20px;font-size:16px">Save</div></div>
+ <div class="eyebrow" style="margin:18px 0 8px">Suggestions</div>
+ <div style="display:flex;gap:8px;flex-wrap:wrap">
+  ${[['Me','grad'],['Alex','#3B82F6'],['Jordan','#84CC16']].map(([n,c])=>`<div style="height:36px;border-radius:999px;background:var(--fill);display:flex;align-items:center;gap:7px;padding:0 14px 0 5px;font-size:15px;font-weight:500"><div class="av ${c=='grad'?'grad':''}" style="width:26px;height:26px;font-size:12px;${c!='grad'?`background:${c}`:''}">${n=='Me'?ic('person2',14):n[0]}</div>${n}</div>`).join('')}
+ </div>
+ <div class="eyebrow" style="margin:18px 0 8px">Same person as</div>
+ <div style="display:flex;gap:8px">${['P','T','S'].map(k=>`<div style="display:flex;align-items:center;gap:8px;height:40px;padding:0 14px 0 4px;border-radius:999px;border:1px solid var(--stroke);background:var(--surface)">${av(k,32)}<span style="font-size:15px;font-weight:500">${SP[k].n}</span></div>`).join('')}</div>
+</div>`}
+
+/* ---------- 6. Actions (detail) ---------- */
+function actionCard(o){return `<div class="card"><div class="acard">
+ ${o.kind=='ai'?`<div class="gi grad">${ic('sparkle',16)}</div>`:o.kind=='done'?`<div class="checked">${ic('check',14,3)}</div>`:`<div class="check"></div>`}
+ <div style="flex:1;min-width:0">
+  <div class="headline" style="${o.kind=='done'?'text-decoration:line-through;color:var(--t2);font-weight:500':''};margin-top:${o.kind=='ai'?3:1}px">${o.text}</div>
+  <div class="chips" style="margin-top:10px">${o.owner?`<span class="owner">${av(o.owner,20)}${SP[o.owner].n}</span>`:''}${o.due?chip(o.due,'cal','var(--warning)'):''}${o.src?chip('Source','quote','var(--brand)'):''}</div>
+  ${o.kind=='ai'?`<div style="display:flex;gap:8px;margin-top:12px"><span class="btnP grad">${ic('check',15,2.6)}Accept</span><span class="btnS">${ic('x',14,2.6)}Dismiss</span></div>`:''}
+  ${o.meeting?`<div style="border-top:1px solid var(--stroke);margin-top:12px;padding-top:10px;display:flex;align-items:center;gap:6px" class="foot">${ic('wave',14,2.2)}<span style="flex:1">${o.meeting}</span>${ic('chev',14,2.2)}</div>`:''}
+ </div></div></div>`}
+function actionsDetail(){return `${stickyHeader(1)}<div class="content" style="top:172px">
+<div style="display:flex;align-items:center;gap:8px;margin:0 4px 10px"><span class="eyebrow">To review</span><span class="aibadge grad">${ic('sparkle',10)}AI</span></div>
+<div style="display:flex;flex-direction:column;gap:12px">
+${actionCard({kind:'ai',text:'Send the revised page list',owner:'P',due:'By Friday',src:1})}
+${actionCard({kind:'ai',text:'Update the risk log with the March launch date',owner:'T',src:1})}
+</div>
+<div class="eyebrow" style="margin:20px 4px 10px">Open</div>
+${actionCard({kind:'open',text:'Check when the hosting contract renews',owner:'U',due:'Before December',src:1})}
+<div class="eyebrow" style="margin:20px 4px 10px">Done</div>
+${actionCard({kind:'done',text:'Share the audit spreadsheet with the team',owner:'S'})}
+<div class="card" style="margin-top:12px;display:flex;align-items:center;gap:10px;color:var(--t3);font-size:17px;border-style:dashed"><span style="color:var(--brand)">${ic('plus',20,2.4)}</span>Add an action</div>
+</div>${tabbar(0)}${homeInd}`}
+
+/* ---------- 7. Actions tab ---------- */
+function actionsTab(){return `${glow}${statusBar}<div class="content">
+<div style="display:flex;justify-content:space-between;align-items:flex-end;padding-top:10px">
+ <div><div class="display">Actions</div><div class="sub" style="margin-top:2px">4 open across 3 meetings</div></div>
+ <div class="gcirc glass" style="margin-bottom:4px">${ic('filter',18,2.2)}</div></div>
+<div style="margin-top:16px">${pills([['To review',3],['Open',4],'Done'],0)}</div>
+<div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
+${actionCard({kind:'ai',text:'Send the revised page list',owner:'P',due:'By Friday',meeting:'Website relaunch weekly check-in'})}
+${actionCard({kind:'ai',text:'Update the risk log with the March launch date',owner:'T',meeting:'Website relaunch weekly check-in'})}
+${actionCard({kind:'ai',text:'Circulate the revised training budget',owner:'A',due:'Next week',meeting:'Quarterly budget review'})}
+</div></div>${tabbar(1)}${homeInd}`}
+
+/* ---------- 8. Processing ---------- */
+function processing(){
+ const step=(state,t,d)=>`<div style="display:flex;gap:12px;align-items:flex-start;margin-top:14px">
+  ${state=='done'?`<div class="checked" style="width:26px;height:26px">${ic('check',14,3)}</div>`:state=='busy'?`<div style="width:26px;height:26px;border-radius:50%;border:2.5px solid color-mix(in srgb,var(--brand) 22%,transparent);border-top-color:var(--brand);border-right-color:var(--brand);transform:rotate(20deg);flex:none"></div>`:`<div style="width:26px;height:26px;border-radius:50%;border:1.8px dashed var(--t3);flex:none"></div>`}
+  <div><div class="headline" style="${state=='todo'?'color:var(--t3);font-weight:500':''}">${t}</div>${d?`<div class="foot" style="margin-top:1px">${d}</div>`:''}</div></div>`;
+ return `${glow}${statusBar}${navDetail('')}<div class="content" style="top:110px">
+${detailHeader('Thursday 30 October · 14:30','1:1 with Sam',chip('22 min','clock')+chip('On-device','lock','var(--brand)'))}
+<div class="card" style="margin-top:22px">
+ <div class="ch" style="margin-bottom:14px"><div class="gi grad">${ic('sparkle',16)}</div><h3>Preparing your notes</h3><span class="foot">About 1 min</span></div>
+ <div style="height:6px;border-radius:3px;background:var(--fill);overflow:hidden"><div class="grad" style="width:42%;height:100%;border-radius:3px"></div></div>
+ ${step('done','Transcribed','22 min · 3,140 words')}
+ ${step('busy','Identifying speakers…','Separating voices on this iPhone')}
+ ${step('todo','Writing summary')}
+ ${step('todo','Finding decisions and actions')}
+ <div style="display:flex;gap:8px;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--stroke)" class="foot">${ic('lock',14,2.2)}Audio is deleted as soon as speakers are identified.</div>
+</div>
+<div class="foot" style="text-align:center;margin:14px 20px 0">You can leave this screen. Notes keep processing in the background.</div>
+<div class="card" style="margin-top:14px">
+ <div style="display:flex;gap:10px;align-items:center"><div class="skel" style="width:28px;height:28px;border-radius:9px"></div><div class="skel" style="width:110px;height:14px"></div></div>
+ <div class="skel" style="margin-top:16px;width:94%"></div><div class="skel" style="margin-top:10px;width:86%"></div><div class="skel" style="margin-top:10px;width:70%"></div><div class="skel" style="margin-top:10px;width:78%"></div>
+</div>
+</div>${tabbar(0)}${homeInd}`}
+
+const theme=location.hash==='#dark'?'dark':'light';
+if(theme==='dark')document.body.classList.add('dk');
+const screens=[home,recording,overview,transcript,naming,actionsDetail,actionsTab,processing];
+document.getElementById('root').innerHTML=screens.map((f,i)=>`<div class="phone theme-${i==1?'dark':theme}" id="s${i+1}">${f()}</div>`).join('');
+</script></body></html>

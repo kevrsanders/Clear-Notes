@@ -7,7 +7,7 @@ import FoundationModels
 struct GeneratedAction {
     @Guide(description: "The task, starting with a verb, e.g. 'Send the revised budget to finance'")
     var task: String
-    @Guide(description: "The first name of the person responsible, or an empty string if nobody was named")
+    @Guide(description: "The name of the person responsible, or an empty string if nobody was named. Never use a label like 'Speaker 2'.")
     var owner: String
     @Guide(description: "The deadline exactly as it was said, e.g. 'by Friday', or an empty string if none was given")
     var due: String
@@ -54,15 +54,17 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
     private static let instructions = """
         You help people turn meeting transcripts into clear notes. \
         Only include points, decisions and actions that are actually stated in the transcript. \
-        Never invent names, dates or tasks. Write in plain British English.
+        Each transcript line starts with a time and the speaker. When someone says "I will" or "I'll", \
+        they are the owner of that action. Never invent names, dates or tasks. Write in plain British English.
         """
 
-    func enhance(segments: [TranscriptSegment], userNotes: String) async throws -> MeetingInsights {
+    func enhance(segments: [TranscriptSegment], speakers: [Speaker], userNotes: String) async throws -> MeetingInsights {
+        let labels = Dictionary(uniqueKeysWithValues: speakers.map { ($0.id, $0.displayName) })
         var keyPoints: [String] = []
         var decisions: [String] = []
         var actions: [ExtractedAction] = []
 
-        for chunk in chunks(of: segments) {
+        for chunk in chunks(of: segments, labels: labels) {
             let session = LanguageModelSession(instructions: Self.instructions)
             var prompt = "Extract the key points, decisions and actions from this part of a meeting transcript.\n\n"
             if !userNotes.isEmpty {
@@ -101,11 +103,12 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         )
     }
 
-    private func chunks(of segments: [TranscriptSegment]) -> [String] {
+    private func chunks(of segments: [TranscriptSegment], labels: [String: String]) -> [String] {
         var chunks: [String] = []
         var current = ""
         for segment in segments {
-            let line = "[\(segment.start.clockString)] \(segment.text)\n"
+            let speaker = segment.speakerID.flatMap { labels[$0] } ?? "Unknown"
+            let line = "[\(segment.start.clockString)] \(speaker): \(segment.text)\n"
             if current.count + line.count > chunkCharacterLimit && !current.isEmpty {
                 chunks.append(current)
                 current = ""

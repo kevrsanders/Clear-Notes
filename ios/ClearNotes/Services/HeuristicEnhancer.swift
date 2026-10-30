@@ -8,19 +8,22 @@ struct HeuristicEnhancer: NotesEnhancer {
 
     static let actionCues = [
         "i will", "i'll", "we will", "we'll", "you will", "you'll", "will send", "will share",
-        "will follow up", "can you", "could you", "action:", "action point", "to do", "todo",
-        "needs to", "need to", "follow up", "going to", "take that away", "take away",
+        "will follow up", "can you", "could you", "action point", "to do", "todo",
+        "needs to", "need to", "follow up", "going to", "take that away", "take away", "let me",
     ]
+    /// Commitments the speaker makes themselves, so the speaker is the owner.
+    static let firstPersonCues = ["i will", "i'll", "i can", "i'm going to", "i am going to", "let me", "i need to"]
     static let decisionCues = [
         "we agreed", "agreed that", "we've agreed", "we decided", "decided to", "the decision",
-        "decision:", "let's go with", "we'll go with", "signed off", "approved",
+        "let's go with", "we'll go with", "signed off", "approved",
     ]
     private static let notOwners: Set<String> = [
         "I", "We", "You", "They", "So", "And", "Then", "The", "It", "That", "This", "Someone",
         "Somebody", "Everyone", "But", "Okay", "Ok", "Yes", "No", "Also", "Just",
     ]
 
-    func enhance(segments: [TranscriptSegment], userNotes: String) async throws -> MeetingInsights {
+    func enhance(segments: [TranscriptSegment], speakers: [Speaker], userNotes: String) async throws -> MeetingInsights {
+        let names = Dictionary(uniqueKeysWithValues: speakers.compactMap { speaker in speaker.name.map { (speaker.id, $0) } })
         var decisions: [String] = []
         var actions: [ExtractedAction] = []
 
@@ -34,14 +37,16 @@ struct HeuristicEnhancer: NotesEnhancer {
         }
 
         for segment in segments {
+            let speakerName = segment.speakerID.flatMap { names[$0] }
             for sentence in Self.sentences(in: segment.text) {
-                let lower = sentence.lowercased()
-                if Self.decisionCues.contains(where: { lower.contains($0) }) {
+                let words = Self.normalized(sentence)
+                if Self.decisionCues.contains(where: { words.contains(" \($0) ") }) {
                     decisions.append(sentence)
-                } else if Self.actionCues.contains(where: { lower.contains($0) }) {
+                } else if Self.actionCues.contains(where: { words.contains(" \($0) ") }) {
+                    let isOwnCommitment = Self.firstPersonCues.contains { words.contains(" \($0) ") }
                     actions.append(ExtractedAction(
                         task: sentence,
-                        owner: Self.owner(in: sentence),
+                        owner: Self.owner(in: sentence) ?? (isOwnCommitment ? speakerName : nil),
                         due: Self.due(in: sentence),
                         evidence: sentence
                     ))
@@ -58,6 +63,16 @@ struct HeuristicEnhancer: NotesEnhancer {
     }
 
     // MARK: - Helpers
+
+    /// Lower-cased words separated by single spaces, padded with a space at each end,
+    /// so cues match whole words only ("taxi will" doesn't match "i will").
+    static func normalized(_ text: String) -> String {
+        let mapped = text.lowercased().map { character -> Character in
+            if character == "\u{2019}" { return "'" }
+            return character.isLetter || character.isNumber || character == "'" ? character : " "
+        }
+        return " " + String(mapped).split(separator: " ").joined(separator: " ") + " "
+    }
 
     static func sentences(in text: String) -> [String] {
         var result: [String] = []

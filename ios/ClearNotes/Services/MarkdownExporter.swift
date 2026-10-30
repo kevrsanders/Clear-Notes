@@ -10,6 +10,10 @@ enum MarkdownExporter {
             "",
         ]
 
+        let named = meeting.speakers.map(\.displayName)
+        if !named.isEmpty {
+            lines += ["**Speakers:** \(named.joined(separator: ", "))", ""]
+        }
         if !meeting.summary.isEmpty {
             lines += ["## Summary", "", meeting.summary, ""]
         }
@@ -36,7 +40,10 @@ enum MarkdownExporter {
         }
         if !meeting.segments.isEmpty {
             lines += ["## Transcript", ""]
-            lines += meeting.segments.map { "**[\($0.start.clockString)]** \($0.text)" }
+            lines += meeting.segments.map { segment in
+                let speaker = meeting.speaker(withID: segment.speakerID).map { " \($0.displayName):" } ?? ""
+                return "**[\(segment.start.clockString)]\(speaker)** \(segment.text)"
+            }
         }
         return lines.joined(separator: "\n")
     }

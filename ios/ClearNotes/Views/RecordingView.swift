@@ -1,17 +1,17 @@
 import SwiftUI
 import UIKit
 
-/// Full-screen live capture: timer, level meter, live transcript and the user's own notes.
+/// Full-screen live capture, always dark: a level orb, timer, live transcript and the user's own notes.
 struct RecordingView: View {
-    enum Pane: String, CaseIterable {
-        case transcript = "Live transcript"
-        case notes = "My notes"
+    enum Pane: Hashable {
+        case transcript, notes
     }
 
     var onFinish: (RecordingResult, String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage(SettingsKeys.requireOnDevice) private var requireOnDevice = true
+    @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @State private var recorder = MeetingRecorder()
     @State private var notes = ""
     @State private var pane: Pane = .transcript
@@ -20,33 +20,58 @@ struct RecordingView: View {
     @State private var isFinishing = false
     @FocusState private var notesFocused: Bool
 
+    private var isRecording: Bool { recorder.state == .recording }
+    private var canControl: Bool { recorder.state == .recording || recorder.state == .paused }
+
+    /// Average of the latest levels, so the orb moves smoothly.
+    private var level: CGFloat {
+        let recent = recorder.levels.suffix(3)
+        return CGFloat(recent.reduce(0, +) / Float(max(recent.count, 1)))
+    }
+
     var body: some View {
-        VStack(spacing: 18) {
-            header
-            if let errorMessage {
-                errorView(errorMessage)
-            } else {
-                timer
-                LevelMeter(levels: recorder.levels, isActive: recorder.state == .recording)
-                Picker("View", selection: $pane) {
-                    ForEach(Pane.allCases, id: \.self) { Text($0.rawValue) }
-                }
-                .pickerStyle(.segmented)
+        ZStack {
+            Color(hex: 0x07070B).ignoresSafeArea()
+            Circle()
+                .fill(Theme.recordGradient)
+                .frame(width: 420, height: 420)
+                .blur(radius: 120)
+                .opacity(isRecording ? 0.30 + Double(level) * 0.35 : 0.12)
+                .offset(y: -180)
+                .ignoresSafeArea()
+                .animation(.easeOut(duration: 0.3), value: level)
 
-                Group {
-                    switch pane {
-                    case .transcript: transcript
-                    case .notes: notesEditor
+            VStack(spacing: 18) {
+                header
+                if let errorMessage {
+                    errorView(errorMessage)
+                } else {
+                    VStack(spacing: 4) {
+                        LevelOrb(level: level, isActive: isRecording)
+                        Text(recorder.elapsed.clockString)
+                            .font(.system(size: 60, weight: .thin))
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                            .foregroundStyle(.white)
                     }
+                    PillTabs<Pane>(
+                        items: [.init(value: .transcript, title: "Transcript"), .init(value: .notes, title: "My notes")],
+                        selection: $pane
+                    )
+                    Group {
+                        switch pane {
+                        case .transcript: transcript
+                        case .notes: notesEditor
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
+                    controls
                 }
-                .frame(maxHeight: .infinity)
-
-                controls
             }
+            .padding(.horizontal, Theme.gutter)
+            .padding(.bottom, 8)
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 8)
-        .background(Theme.canvas.ignoresSafeArea())
+        .preferredColorScheme(.dark)
         .task { await start() }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
@@ -64,87 +89,79 @@ struct RecordingView: View {
 
     private var header: some View {
         HStack {
-            Button {
+            GlassCircleButton(systemName: "xmark", accessibilityLabel: "Close") {
                 if recorder.state == .idle {
                     dismiss()
                 } else {
                     confirmDiscard = true
                 }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.body.weight(.semibold))
-                    .frame(width: 36, height: 36)
-                    .background(Theme.card, in: Circle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close")
-
             Spacer()
-            statusPill
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(isRecording ? Theme.record : Color.white.opacity(0.4))
+                    .frame(width: 8, height: 8)
+                    .shadow(color: Theme.record.opacity(isRecording ? 0.9 : 0), radius: 4)
+                Text(statusText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                if recorder.isOnDevice {
+                    Label("On-device", systemImage: "lock.fill")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 40)
+            .glass(in: Capsule())
             Spacer()
-            Color.clear.frame(width: 36, height: 36)
+            Color.clear.frame(width: 40, height: 40)
         }
         .padding(.top, 8)
-    }
-
-    private var statusPill: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "circle.fill")
-                .font(.system(size: 9))
-                .foregroundStyle(recorder.state == .recording ? Theme.record : Color.secondary)
-                .symbolEffect(.pulse, isActive: recorder.state == .recording)
-            Text(statusText)
-                .font(.subheadline.weight(.medium))
-            if recorder.isOnDevice {
-                Image(systemName: "lock.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Transcribed on this iPhone")
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(Theme.card, in: Capsule())
     }
 
     private var statusText: String {
         switch recorder.state {
         case .idle: isFinishing ? "Saving…" : "Starting…"
-        case .recording: recorder.isOnDevice ? "Recording · On-device" : "Recording"
+        case .recording: "REC"
         case .paused: "Paused"
         case .stopping: "Saving…"
         }
     }
 
-    private var timer: some View {
-        Text(recorder.elapsed.clockString)
-            .font(.system(size: 60, weight: .light, design: .rounded))
-            .monospacedDigit()
-            .contentTransition(.numericText())
-            .padding(.top, 4)
-    }
-
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
+                    if identifySpeakers && SpeakerSeparators.isSupported {
+                        Label("Speakers are identified when you finish", systemImage: "person.2.wave.2")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.45))
+                            .padding(.top, 18)
+                    }
                     if recorder.segments.isEmpty && recorder.liveText.isEmpty {
                         Text("Start talking. Your words will appear here.")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 40)
+                            .font(.title3)
+                            .foregroundStyle(.white.opacity(0.4))
+                            .padding(.top, 8)
                     }
                     ForEach(recorder.segments) { segment in
-                        TranscriptLine(time: segment.start, text: segment.text)
+                        LiveLine(time: segment.start, text: segment.text)
                     }
                     if !recorder.liveText.isEmpty {
-                        TranscriptLine(time: nil, text: recorder.liveText, isLive: true)
+                        LiveLine(time: nil, text: recorder.liveText, isLive: true)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
             }
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
+            .mask(
+                LinearGradient(
+                    stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.1), .init(color: .black, location: 1)],
+                    startPoint: .top, endPoint: .bottom
+                )
+            )
             .onChange(of: recorder.liveText) {
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
@@ -155,44 +172,47 @@ struct RecordingView: View {
     }
 
     private var notesEditor: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             ZStack(alignment: .topLeading) {
                 if notes.isEmpty {
-                    Text("Jot down what matters. AI uses your notes to decide what to focus on.")
-                        .foregroundStyle(.tertiary)
+                    Text("Jot down what matters. The AI uses your notes to decide what to focus on.")
+                        .foregroundStyle(.white.opacity(0.35))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 8)
                 }
                 TextEditor(text: $notes)
                     .focused($notesFocused)
                     .scrollContentBackground(.hidden)
+                    .foregroundStyle(.white)
             }
-            HStack(spacing: 8) {
-                quickInsert("Action", symbol: "checkmark.circle", prefix: "Action: ")
-                quickInsert("Decision", symbol: "signpost.right", prefix: "Decision: ")
-                Spacer()
-                if notesFocused {
-                    Button("Done") { notesFocused = false }
-                        .font(.subheadline.weight(.semibold))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    quickInsert("Action", symbol: "checkmark.circle", prefix: "Action: ")
+                    quickInsert("Decision", symbol: "signpost.right", prefix: "Decision: ")
+                    quickInsert("Moment", symbol: "bookmark", prefix: "Moment: ")
+                    if notesFocused {
+                        Button("Done") { notesFocused = false }
+                            .buttonStyle(SecondaryButtonStyle(compact: true))
+                    }
                 }
             }
         }
-        .padding(12)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
+        .padding(14)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(.white.opacity(0.08)))
     }
 
     private var controls: some View {
-        HStack(spacing: 20) {
-            Button {
-                togglePause()
-            } label: {
+        HStack(spacing: 14) {
+            Button(action: togglePause) {
                 Image(systemName: recorder.state == .paused ? "play.fill" : "pause.fill")
                     .font(.title2)
-                    .frame(width: 64, height: 64)
-                    .background(Theme.card, in: Circle())
+                    .foregroundStyle(.white)
+                    .frame(width: 60, height: 60)
+                    .glass(in: Circle())
             }
             .buttonStyle(.plain)
-            .disabled(recorder.state != .recording && recorder.state != .paused)
+            .disabled(!canControl)
             .accessibilityLabel(recorder.state == .paused ? "Resume" : "Pause")
 
             Button {
@@ -205,26 +225,29 @@ struct RecordingView: View {
                 .font(.headline)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .frame(height: 64)
-                .background(Theme.record, in: Capsule())
+                .frame(height: 60)
+                .background(Theme.recordGradient, in: Capsule())
+                .shadow(color: Theme.record.opacity(0.45), radius: 16, y: 6)
             }
             .buttonStyle(.plain)
-            .disabled(recorder.state != .recording && recorder.state != .paused)
+            .disabled(!canControl)
+            .opacity(canControl ? 1 : 0.5)
         }
         .sensoryFeedback(.impact, trigger: recorder.state)
     }
 
     private func errorView(_ message: String) -> some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             Spacer()
-            Image(systemName: "mic.slash")
-                .font(.system(size: 44))
-                .foregroundStyle(.secondary)
+            Image(systemName: "mic.slash.fill")
+                .font(.system(size: 40))
+                .foregroundStyle(.white.opacity(0.5))
             Text(message)
                 .multilineTextAlignment(.center)
+                .foregroundStyle(.white)
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 Button("Open Settings") { UIApplication.shared.open(url) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(PrimaryButtonStyle())
             }
             Spacer()
         }
@@ -239,10 +262,8 @@ struct RecordingView: View {
             notesFocused = true
         } label: {
             Label(title, systemImage: symbol)
-                .font(.subheadline.weight(.medium))
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .buttonStyle(SecondaryButtonStyle(compact: true))
     }
 
     // MARK: - Actions
@@ -253,7 +274,10 @@ struct RecordingView: View {
             return
         }
         do {
-            try recorder.start(requireOnDevice: requireOnDevice)
+            try recorder.start(
+                requireOnDevice: requireOnDevice,
+                captureAudioForSpeakers: identifySpeakers && SpeakerSeparators.isSupported
+            )
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -276,19 +300,51 @@ struct RecordingView: View {
     }
 }
 
-private struct TranscriptLine: View {
+/// Glowing orb that grows with the microphone level.
+private struct LevelOrb: View {
+    var level: CGFloat
+    var isActive: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Theme.recordGradient)
+                .opacity(0.14)
+                .scaleEffect(isActive ? 0.85 + level * 0.3 : 0.8)
+            Circle()
+                .fill(Theme.recordGradient)
+                .opacity(0.3)
+                .scaleEffect(isActive ? 0.66 + level * 0.2 : 0.62)
+            Circle()
+                .fill(Theme.recordGradient)
+                .frame(width: 84, height: 84)
+                .shadow(color: Theme.record.opacity(isActive ? 0.7 : 0.2), radius: 22)
+            Image(systemName: isActive ? "waveform" : "pause.fill")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(.white)
+                .symbolEffect(.variableColor.iterative, isActive: isActive)
+        }
+        .frame(width: 150, height: 150)
+        .saturation(isActive ? 1 : 0.3)
+        .animation(.easeOut(duration: 0.15), value: level)
+        .animation(.easeInOut(duration: 0.3), value: isActive)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct LiveLine: View {
     var time: TimeInterval?
     var text: String
     var isLive = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(time?.clockString ?? "now")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(isLive ? AnyShapeStyle(Theme.record) : AnyShapeStyle(.secondary))
-                .frame(width: 44, alignment: .leading)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(time?.clockString ?? "Now")
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(isLive ? AnyShapeStyle(Theme.record) : AnyShapeStyle(Color.white.opacity(0.4)))
             Text(text)
-                .foregroundStyle(isLive ? .secondary : .primary)
+                .font(.body)
+                .foregroundStyle(isLive ? Color.white.opacity(0.6) : Color.white.opacity(0.92))
         }
     }
 }

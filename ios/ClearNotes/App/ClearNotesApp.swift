@@ -12,6 +12,7 @@ struct ClearNotesApp: App {
 }
 
 struct ContentView: View {
+    @Environment(\.modelContext) private var context
     @Query private var actions: [ActionItem]
 
     private var actionBadge: Int {
@@ -28,5 +29,7 @@ struct ContentView: View {
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        .tint(Theme.brand)
+        .task { await MeetingProcessor.resumeUnfinished(in: context) }
     }
 }
