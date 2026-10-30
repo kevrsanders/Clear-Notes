@@ -28,7 +28,7 @@ struct Avatar: View {
         .accessibilityLabel(name ?? "Unnamed speaker")
     }
 
-    static func initials(of name: String?) -> String? {
+    nonisolated static func initials(of name: String?) -> String? {
         guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
         let letters = name.split(separator: " ").prefix(2).compactMap(\.first)
         return String(letters).uppercased()

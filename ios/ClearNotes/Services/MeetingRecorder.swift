@@ -431,14 +431,16 @@ private final class RecognitionPipe: @unchecked Sendable {
         let ratio = speakerFormat.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
         guard let output = AVAudioPCMBuffer(pcmFormat: speakerFormat, frameCapacity: capacity) else { return }
-        var supplied = false
+        // The converter asks for input until told there is none; hand it this buffer once.
+        final class Once: @unchecked Sendable { var supplied = false }
+        let once = Once()
         var error: NSError?
         _ = converter.convert(to: output, error: &error) { _, status in
-            if supplied {
+            if once.supplied {
                 status.pointee = .noDataNow
                 return nil
             }
-            supplied = true
+            once.supplied = true
             status.pointee = .haveData
             return buffer
         }

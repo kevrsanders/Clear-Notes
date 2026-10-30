@@ -18,7 +18,9 @@ enum MarkdownExporter {
             lines += ["## Summary", "", meeting.summary, ""]
         }
         if !meeting.decisions.isEmpty {
-            lines += ["## Decisions", ""] + meeting.decisions.map { "- \($0)" } + [""]
+            lines += ["## Decisions", ""]
+            lines += meeting.decisions.map { "- \($0)" }
+            lines.append("")
         }
 
         let actions = meeting.actions
