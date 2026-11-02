@@ -91,7 +91,7 @@ struct HeuristicEnhancer: NotesEnhancer {
             guard !keywords.isEmpty else { return nil }
             let title = keywords.joined(separator: " and ")
             let points = window
-                .flatMap { sentences(in: $0.text) }
+                .flatMap { segment -> [String] in sentences(in: segment.text) }
                 .filter { $0.split(separator: " ").count >= 6 }
                 .sorted { $0.count > $1.count }
                 .prefix(2)
@@ -190,7 +190,7 @@ struct HeuristicEnhancer: NotesEnhancer {
             return noteLines.prefix(8).map { $0.hasPrefix("-") ? $0 : "- \($0)" }.joined(separator: "\n")
         }
         let longest = segments
-            .flatMap { sentences(in: $0.text) }
+            .flatMap { segment -> [String] in sentences(in: segment.text) }
             .filter { $0.split(separator: " ").count >= 8 }
             .prefix(3)
         if longest.isEmpty {
