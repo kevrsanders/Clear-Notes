@@ -147,3 +147,10 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Xcode (project is generated from ios/project.yml with XcodeGen)
+ios/*.xcodeproj/
+xcuserdata/
+DerivedData/
+*.xcuserstate
+ios/ClearNotes/Info.plist

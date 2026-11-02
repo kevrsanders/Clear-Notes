@@ -1,0 +1,137 @@
+import SwiftUI
+
+/// One action: status, text, owner, due date and source. Suggested actions show Accept and Dismiss.
+struct ActionCard: View {
+    @Bindable var action: ActionItem
+    var onShowSource: (() -> Void)?
+    /// When set, a footer row names the meeting and opens it.
+    var onOpenMeeting: (() -> Void)?
+
+    /// The speaker whose name matches the owner, so the owner uses their colour.
+    private var ownerSpeaker: Speaker? {
+        guard let owner = action.owner?.lowercased() else { return nil }
+        return action.meeting?.speakers.first { $0.name?.lowercased() == owner }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                leading
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(action.text)
+                        .font(action.status == .done ? .body : .body.weight(.medium))
+                        .strikethrough(action.status == .done)
+                        .foregroundStyle(action.status == .done ? Theme.textSecondary : Color.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    details
+                }
+                Spacer(minLength: 0)
+            }
+
+            if action.status == .suggested {
+                HStack(spacing: 8) {
+                    Button {
+                        withAnimation(.snappy) { action.status = .open }
+                    } label: {
+                        Label("Accept", systemImage: "checkmark")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(compact: true))
+
+                    Button {
+                        withAnimation(.snappy) { action.status = .dismissed }
+                    } label: {
+                        Label("Dismiss", systemImage: "xmark")
+                    }
+                    .buttonStyle(SecondaryButtonStyle(compact: true))
+                }
+                .padding(.leading, 44)
+            }
+
+            if let onOpenMeeting, let meeting = action.meeting {
+                Divider()
+                Button(action: onOpenMeeting) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "waveform")
+                        Text(meeting.title)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open meeting \(meeting.title)")
+            }
+        }
+        .cardStyle(padding: 16)
+    }
+
+    @ViewBuilder
+    private var leading: some View {
+        if action.status == .suggested {
+            IconTile(systemName: "sparkles", tint: nil, size: 32)
+                .accessibilityLabel("Suggested by AI")
+        } else {
+            Button {
+                withAnimation(.snappy) {
+                    action.status = action.status == .done ? .open : .done
+                }
+            } label: {
+                ZStack {
+                    Circle()
+                        .strokeBorder(action.status == .done ? Theme.success : Theme.textTertiary, lineWidth: 2)
+                    if action.status == .done {
+                        Circle().fill(Theme.success)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .sensoryFeedback(.success, trigger: action.status == .done)
+            .accessibilityLabel(action.status == .done ? "Mark as not done" : "Mark as done")
+        }
+    }
+
+    @ViewBuilder
+    private var details: some View {
+        if action.owner != nil || action.due != nil || onShowSource != nil {
+            FlowLayout(spacing: 6) {
+                if let owner = action.owner {
+                    ownerChip(owner)
+                }
+                if let due = action.due {
+                    Chip(text: due, systemImage: "calendar", tint: Theme.warning)
+                }
+                if let onShowSource {
+                    Button(action: onShowSource) {
+                        Chip(text: "Source", systemImage: "quote.opening", tint: Theme.brand)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows where this was said in the transcript")
+                }
+            }
+        }
+    }
+
+    /// Owner as a capsule: a small avatar in the speaker's colour plus the name.
+    private func ownerChip(_ owner: String) -> some View {
+        let color = ownerSpeaker.map { Theme.speakerColor(number: $0.number) } ?? Color(hex: 0x8E8E9A)
+        return HStack(spacing: 5) {
+            Avatar(name: owner, color: color, size: 18)
+            Text(owner)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(color)
+        .padding(.leading, 3)
+        .padding(.trailing, 9)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.12), in: Capsule())
+    }
+}
