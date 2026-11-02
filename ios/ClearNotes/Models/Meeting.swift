@@ -71,6 +71,8 @@ final class Meeting {
     var audioExpiresAt: Date?
     /// Set when speakers are renamed after notes were written, so the user can refresh them.
     var notesNeedRefresh: Bool = false
+    /// Bumped on every speaker edit. Views read it so changes inside `segments` always redraw.
+    var revision: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []
@@ -172,6 +174,13 @@ final class Meeting {
         speakers.contains { $0.name == nil }
     }
 
+    /// Saves a speaker edit straight away and marks the notes as out of date.
+    private func didEditSpeakers() {
+        revision += 1
+        notesNeedRefresh = processingState == .ready
+        try? modelContext?.save()
+    }
+
     /// Names one speaker everywhere in the meeting.
     func renameSpeaker(_ id: String, to name: String?) {
         var updated = speakers
@@ -179,7 +188,17 @@ final class Meeting {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         updated[index].name = trimmed.isEmpty ? nil : trimmed
         speakers = updated
-        notesNeedRefresh = processingState == .ready
+        didEditSpeakers()
+    }
+
+    /// Adds an unnamed speaker, for splitting out a voice that separation missed.
+    @discardableResult
+    func addSpeaker() -> Speaker {
+        let number = (speakers.map(\.number).max() ?? 0) + 1
+        let speaker = Speaker(id: "S\(number)", number: number)
+        speakers = speakers + [speaker]
+        didEditSpeakers()
+        return speaker
     }
 
     /// Treats two voices as the same person, e.g. when separation split one person in two.
@@ -191,7 +210,7 @@ final class Meeting {
             return segment
         }
         speakers = speakers.filter { $0.id != id }
-        notesNeedRefresh = processingState == .ready
+        didEditSpeakers()
     }
 
     /// Moves one line of the transcript to a different speaker.
@@ -201,7 +220,7 @@ final class Meeting {
             if segment.id == segmentID { segment.speakerID = speakerID }
             return segment
         }
-        notesNeedRefresh = processingState == .ready
+        didEditSpeakers()
     }
 }
 

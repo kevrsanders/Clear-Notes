@@ -6,8 +6,8 @@ import SwiftUI
 struct SpeakerNamingSheet: View {
     @Bindable var meeting: Meeting
     let speaker: Speaker
-    /// Plays the recording from a time, when the recording is kept.
-    var onPlay: ((TimeInterval) -> Void)? = nil
+    /// Plays the recording between two times, when the recording is kept.
+    var onPlay: ((TimeInterval, TimeInterval?) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Query private var allMeetings: [Meeting]
@@ -87,7 +87,7 @@ struct SpeakerNamingSheet: View {
                                 Spacer(minLength: 0)
                                 if let onPlay {
                                     Button {
-                                        onPlay(quote.start)
+                                        onPlay(quote.start, quote.end)
                                     } label: {
                                         Image(systemName: "play.fill")
                                             .font(.system(size: 13, weight: .bold))

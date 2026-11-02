@@ -30,10 +30,10 @@ struct MeetingDetailView: View {
         return meeting.segments.last(where: { $0.start <= time })?.id
     }
 
-    /// Plays the recording from a moment, when there is one.
-    private var playHandler: ((TimeInterval) -> Void)? {
+    /// Plays the recording from a moment (to an optional end), when there is a recording.
+    private var playHandler: ((TimeInterval, TimeInterval?) -> Void)? {
         guard playback.isLoaded else { return nil }
-        return { time in playback.play(from: time) }
+        return { start, end in playback.play(from: start, until: end) }
     }
 
     private var toReview: [ActionItem] { sortedActions.filter { $0.status == .suggested } }
@@ -582,6 +582,8 @@ struct MeetingDetailView: View {
                     .cardStyle()
             }
             let counts = sourceCounts
+            // Reading the revision makes speaker edits redraw the transcript straight away.
+            let revision = meeting.revision
             ForEach(turns) { turn in
                 TurnView(
                     turn: turn,
@@ -593,8 +595,13 @@ struct MeetingDetailView: View {
                     sourceCounts: counts,
                     onName: { namingSpeaker = $0 },
                     onReassign: { segmentID, speakerID in meeting.reassignSegment(segmentID, to: speakerID) },
+                    onNewSpeaker: { segmentID in
+                        let speaker = meeting.addSpeaker()
+                        meeting.reassignSegment(segmentID, to: speaker.id)
+                    },
                     onPlay: playHandler
                 )
+                .id("\(turn.id)-\(revision)")
             }
         }
         .padding(.top, 4)
@@ -610,8 +617,9 @@ struct MeetingDetailView: View {
         var sourceCounts: [UUID: Int]
         var onName: (Speaker) -> Void
         var onReassign: (UUID, String) -> Void
-        /// Plays the recording from a time, when the recording is kept.
-        var onPlay: ((TimeInterval) -> Void)?
+        var onNewSpeaker: (UUID) -> Void
+        /// Plays the recording between two times, when the recording is kept.
+        var onPlay: ((TimeInterval, TimeInterval?) -> Void)?
 
         var body: some View {
             HStack(alignment: .top, spacing: 12) {
@@ -657,25 +665,33 @@ struct MeetingDetailView: View {
                 Text(segment.text)
                     .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(isPlaying ? Theme.brand : Color.primary)
-                    .onTapGesture { onPlay?(segment.start) }
-                    .accessibilityHint(onPlay == nil ? "" : "Plays the recording from this line")
+                    .onTapGesture { onPlay?(segment.start, segment.end) }
+                    .accessibilityHint(onPlay == nil ? "" : "Plays this line")
                 if count > 0 {
                     Chip(text: "Source of \(count) action\(count == 1 ? "" : "s")", systemImage: "quote.opening", tint: Theme.brand)
                 }
             }
-            .padding(isHighlighted || isPlaying ? 10 : 0)
+            // Constant padding: the highlight mustn't move lines under the user's finger.
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(isHighlighted || isPlaying ? Theme.brand.opacity(0.10) : .clear)
             )
+            .padding(.horizontal, -8)
             .animation(.easeOut(duration: 0.2), value: isPlaying)
             .id(segment.id)
             .contextMenu {
                 if let onPlay {
                     Button {
-                        onPlay(segment.start)
+                        onPlay(segment.start, segment.end)
                     } label: {
-                        Label("Play from here", systemImage: "play.fill")
+                        Label("Play this line", systemImage: "play.fill")
+                    }
+                    Button {
+                        onPlay(segment.start, nil)
+                    } label: {
+                        Label("Play from here", systemImage: "forward.fill")
                     }
                 }
                 Button {
@@ -685,8 +701,14 @@ struct MeetingDetailView: View {
                 }
                 if !allSpeakers.isEmpty {
                     Menu {
-                        ForEach(allSpeakers) { option in
+                        ForEach(allSpeakers.filter { $0.id != segment.speakerID }) { option in
                             Button(option.displayName) { onReassign(segment.id, option.id) }
+                        }
+                        Divider()
+                        Button {
+                            onNewSpeaker(segment.id)
+                        } label: {
+                            Label("New speaker", systemImage: "person.badge.plus")
                         }
                     } label: {
                         Label("Change speaker", systemImage: "person.crop.circle.badge.questionmark")

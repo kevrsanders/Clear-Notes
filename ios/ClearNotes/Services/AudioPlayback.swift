@@ -16,6 +16,8 @@ final class AudioPlayback {
     private var player: AVAudioPlayer?
     private var loadedURL: URL?
     private var ticker: Timer?
+    /// When set, playback pauses here (used to play a single line).
+    private var stopTime: TimeInterval?
 
     func load(_ url: URL) {
         guard loadedURL != url else { return }
@@ -33,9 +35,10 @@ final class AudioPlayback {
         isPlaying ? pause() : play()
     }
 
-    /// Plays from `time`, or from the current position.
-    func play(from time: TimeInterval? = nil) {
+    /// Plays from `time` (or the current position), stopping at `end` if given.
+    func play(from time: TimeInterval? = nil, until end: TimeInterval? = nil) {
         guard let player else { return }
+        stopTime = end
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .spokenAudio)
         try? session.setActive(true)
@@ -50,6 +53,7 @@ final class AudioPlayback {
     }
 
     func pause() {
+        stopTime = nil
         player?.pause()
         isPlaying = false
         stopTicker()
@@ -104,6 +108,10 @@ final class AudioPlayback {
     private func tick() {
         guard let player else { return }
         currentTime = player.currentTime
+        if let stopTime, currentTime >= stopTime {
+            pause()
+            return
+        }
         if !player.isPlaying {
             // Reached the end.
             isPlaying = false

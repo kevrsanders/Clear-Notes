@@ -67,6 +67,10 @@ struct FluidSpeakerSeparator: SpeakerSeparating {
         var config = OfflineDiarizerConfig.default
         if let expectedSpeakers {
             config.clustering.numSpeakers = expectedSpeakers
+        } else {
+            // Slightly keener to split voices than the default (0.6). Quiet, distant voices
+            // otherwise merge into nearby ones, and merging back is one tap for the user.
+            config.clustering.threshold = 0.55
         }
         let manager = OfflineDiarizerManager(config: config)
         try await manager.prepareModels()
