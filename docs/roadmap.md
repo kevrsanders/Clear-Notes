@@ -1,6 +1,6 @@
 # Clear Notes — Roadmap (Phase 2 onwards)
 
-_Planning notes, not yet built. Last updated 2 November 2026._
+_Planning notes, not yet built. Last updated 2 November 2026 (decisions recorded)._
 
 Phase 1 (done) is a private, on-device iPhone app: capture, transcription, speakers, notes, actions, playback and voice memory. Next we connect it to where work actually happens, mainly Microsoft 365, while keeping the privacy-first design.
 
@@ -93,17 +93,40 @@ A Teams app that lives inside meetings needs hosted components. Plan for a small
 
 ---
 
-## Decisions needed before Phase 2
+## Decisions (agreed 2 November 2026)
 
-1. **Which Microsoft tenant?** **NHSmail** (the national shared tenant) or a **local organisation tenant**. NHSmail tightly controls third-party app registration and consent. Expect an approval process for any app that signs in with NHSmail accounts, especially for admin-consent permissions like Teams transcripts. A local tenant may be quicker to pilot in.
-2. **Who owns the app registration** (and later the Azure subscription)? Ideally your organisation's IT, not a personal account.
-3. **IG approval:** update the DPIA for each new data flow (To Do and Planner, email drafts, OneDrive, Teams transcripts). Voice memory already needs IG sign-off.
-4. **Distribution:** stay on TestFlight for the pilot, then move to an Apple Business Manager custom app for wider NHS rollout.
+1. **Tenant: the local organisation tenant for the pilot, NHSmail later.** NHSmail tightly controls third-party apps and consent, so start its approval process well before moving over. Admin-consent permissions such as Teams transcripts take the longest. The app will read its tenant and client ID from build settings, so changing tenant needs no code changes.
+2. **The app registration is owned by the infrastructure and cyber team**, and so is the Azure subscription later on (Phase 3). It isn't owned by a personal account.
+3. **IG:** update the DPIA for each new data flow (To Do and Planner, email drafts, OneDrive, Teams transcripts) before it's used with real meetings. Voice memory already needs IG sign-off. The DPIA update is still to do.
+4. **Distribution:** TestFlight for the pilot, then an Apple Business Manager custom app for wider rollout.
+
+### What the infrastructure and cyber team will need
+
+- **App registration** in the local tenant: single tenant, public client (mobile), with an **iOS/macOS platform** using the app's bundle ID. The redirect URI is `msauth.<bundle ID>://auth`.
+- **Delegated permissions, added only as each feature is built:**
+
+  | Feature | Permissions | Admin consent? |
+  |---|---|---|
+  | Sign-in | `User.Read` | No* |
+  | To Do and Planner | `Tasks.ReadWrite` | No* |
+  | Owner matching | `People.Read`, `User.ReadBasic.All` | No* |
+  | Outlook draft | `Mail.ReadWrite` | No* |
+  | OneDrive / OneNote | `Files.ReadWrite`, `Notes.Create` | No* |
+  | Calendar details | `Calendars.Read` (optional) | No* |
+  | Teams transcripts | `OnlineMeetings.Read`, `OnlineMeetingTranscript.Read.All` | **Yes** |
+
+  \*Not required by Microsoft, but many organisations turn off user consent. If yours has, the team grants consent for everyone once.
+- **Policy choices** for the team:
+  - Conditional Access (e.g. MFA, compliant device).
+  - Whether Intune app protection is required, which means adding the Intune App SDK.
+  - Whether Graph can access Teams transcripts in this tenant.
+- **For the builds:** the client ID and tenant ID go in GitHub Actions **variables**, like the bundle ID. They identify the app but aren't secrets, so no client secret is needed for the iPhone app.
 
 ## Suggested order
 
 | Step | Scope | Server? |
 |---|---|---|
+| 0 | Infrastructure and cyber team creates the app registration; DPIA updated | No |
 | 1 | Microsoft sign-in (MSAL + broker) | No |
 | 2 | Send actions to To Do | No |
 | 3 | Calendar awareness (EventKit) for titles and attendee-based naming | No |
