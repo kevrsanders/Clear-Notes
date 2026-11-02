@@ -32,6 +32,8 @@ This is the app's permanent, unique ID, in reverse-domain style, e.g. `com.yourn
 - SKU: anything, e.g. `clearnotes`
 - User access: Full access
 
+Don't press **Add for Review** afterwards. That submits the app to the public App Store; TestFlight doesn't need it.
+
 ### 4. Create an App Store Connect API key
 App Store Connect → **Users and Access** → **Integrations** → **App Store Connect API** → **Team Keys** → **+**:
 - Name: `GitHub TestFlight`
@@ -84,7 +86,7 @@ The app declares that it uses no non-exempt encryption (`ITSAppUsesNonExemptEncr
 | "Missing: …" in the **Check TestFlight settings** step | A secret or the variable from step 5 is missing, misspelled, or saved under **Agents** (or Codespaces/Dependabot) instead of **Actions** |
 | "The job was not acquired by Runner…" or long queues | GitHub is short of Apple-silicon Macs. Re-run the failed job later, or add a repository variable `MACOS_RUNNER` set to `macos-26-intel` to use Intel Macs (slower, same Xcode) |
 | "No profiles for '…' were found" / signing errors | Check the API key has **Admin** access, and that the bundle ID variable exactly matches step 2 |
-| "No suitable application records were found" | The app wasn't created in App Store Connect (step 3), or it uses a different bundle ID |
+| "No suitable application records were found" or "Error Downloading App Information" | The app wasn't created in App Store Connect (step 3), it uses a different bundle ID, or an agreement is waiting to be accepted in App Store Connect. Registering the identifier (step 2) doesn't create the app |
 | Build or test failures | Open the failed run in **Actions** and share the error with Claude |
 
 ## Cost
