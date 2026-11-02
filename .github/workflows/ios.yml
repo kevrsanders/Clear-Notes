@@ -72,7 +72,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Summarise test results
-        if: always()
+        # Not on cancelled runs: reading a half-written result bundle can hang and block the queue.
+        if: success() || failure()
+        timeout-minutes: 2
         run: |
           # Shows how many tests ran, since -quiet hides the per-test output.
           xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/Tests.xcresult" --format json > "$RUNNER_TEMP/summary.json" || exit 0
