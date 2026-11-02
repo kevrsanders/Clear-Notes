@@ -274,7 +274,7 @@ struct RecordingView: View {
             return
         }
         do {
-            try recorder.start(
+            try await recorder.start(
                 requireOnDevice: requireOnDevice,
                 captureAudioForSpeakers: identifySpeakers && SpeakerSeparators.isSupported
             )
