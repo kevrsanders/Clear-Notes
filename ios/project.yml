@@ -36,6 +36,7 @@ targets:
           - audio
         NSMicrophoneUsageDescription: Clear Notes uses the microphone to transcribe your meetings. Audio is never saved.
         NSSpeechRecognitionUsageDescription: Clear Notes turns speech into a written transcript on this iPhone.
+        ITSAppUsesNonExemptEncryption: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.clearnotes.app

@@ -47,6 +47,10 @@ Run the unit tests with **⌘U**.
 
 The simulator has no real microphone input for speech, so test capture on a real iPhone.
 
+## TestFlight
+
+GitHub Actions builds, tests and uploads the app to TestFlight, so no Mac is needed. See [TESTFLIGHT.md](TESTFLIGHT.md) for the one-time setup.
+
 ## Project layout
 
 ```
