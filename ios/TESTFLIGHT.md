@@ -87,6 +87,7 @@ The app declares that it uses no non-exempt encryption (`ITSAppUsesNonExemptEncr
 | "The job was not acquired by Runner…" or long queues | GitHub is short of Apple-silicon Macs. Re-run the failed job later, or add a repository variable `MACOS_RUNNER` set to `macos-26-intel` to use Intel Macs (slower, same Xcode) |
 | "No profiles for '…' were found" / signing errors | Check the API key has **Admin** access, and that the bundle ID variable exactly matches step 2 |
 | "No suitable application records were found" or "Error Downloading App Information" | The app wasn't created in App Store Connect (step 3), it uses a different bundle ID, or an agreement is waiting to be accepted in App Store Connect. Registering the identifier (step 2) doesn't create the app |
+| "Your account already has an Apple Development signing certificate for this machine…" | Fixed in the workflow (archives are now unsigned and signed at upload). Optionally revoke stray **Apple Development** certificates created by GitHub runners under Certificates at developer.apple.com |
 | Build or test failures | Open the failed run in **Actions** and share the error with Claude |
 
 ## Cost

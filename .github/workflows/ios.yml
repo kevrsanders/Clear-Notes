@@ -129,6 +129,9 @@ jobs:
           printf '%s\n' "$ASC_PRIVATE_KEY" > "$KEY_PATH"
           echo "KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
+      # The archive is built unsigned. Signing it here would need an Apple Development
+      # certificate whose private key lives on this throwaway runner, which breaks the next
+      # run. The export step below signs with Apple's cloud-managed distribution certificate.
       - name: Archive
         run: |
           xcodebuild archive \
@@ -137,15 +140,11 @@ jobs:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/ClearNotes.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -quiet \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=NO \
             CURRENT_PROJECT_VERSION="${{ github.run_number }}"
 
       - name: Upload to TestFlight
