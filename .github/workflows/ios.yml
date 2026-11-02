@@ -2,7 +2,8 @@ name: iOS
 
 # Builds and tests the iPhone app on every push that touches it. Uploads to TestFlight when
 # run by hand (Actions → iOS → Run workflow) or when a pushed commit message contains
-# "[testflight]". Setup: ios/TESTFLIGHT.md.
+# "[testflight]". Setup: ios/TESTFLIGHT.md. Set the MACOS_RUNNER repository variable
+# (e.g. macos-26-intel) to use another runner when macos-26 is short of capacity.
 
 on:
   push:
@@ -28,7 +29,7 @@ defaults:
 jobs:
   test:
     name: Build and test
-    runs-on: macos-26
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -86,14 +87,15 @@ jobs:
     name: Upload to TestFlight
     needs: test
     if: (github.event_name == 'workflow_dispatch' && inputs.testflight) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[testflight]'))
-    runs-on: macos-26
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
     timeout-minutes: 60
     env:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      BUNDLE_ID: ${{ vars.CLEAR_NOTES_BUNDLE_ID }}
+      # Accepted as a repository variable (preferred) or a secret.
+      BUNDLE_ID: ${{ vars.CLEAR_NOTES_BUNDLE_ID || secrets.CLEAR_NOTES_BUNDLE_ID }}
     steps:
       - name: Check TestFlight settings
         working-directory: .
@@ -173,4 +175,5 @@ jobs:
 
       - name: Remove the key
         if: always()
+        working-directory: .
         run: rm -f "$KEY_PATH"

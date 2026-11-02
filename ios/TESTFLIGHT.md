@@ -53,7 +53,7 @@ On the **Secrets** tab → **New repository secret**, add four:
 | `ASC_PRIVATE_KEY` | Open the `.p8` file in a text editor and paste **all** of it, including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines |
 | `APPLE_TEAM_ID` | Your Team ID |
 
-On the **Variables** tab → **New repository variable**, add one:
+On the **Variables** tab → **New repository variable**, add one (adding it as a secret named the same also works):
 
 | Name | Value |
 |---|---|
@@ -79,7 +79,8 @@ The app declares that it uses no non-exempt encryption (`ITSAppUsesNonExemptEncr
 
 | Problem | What to do |
 |---|---|
-| "Missing: …" in the **Check TestFlight settings** step | A secret or the variable from step 5 is missing or misspelled |
+| "Missing: …" in the **Check TestFlight settings** step | A secret or the variable from step 5 is missing or misspelled. Names must match exactly |
+| "The job was not acquired by Runner…" or long queues | GitHub is short of Apple-silicon Macs. Re-run the failed job later, or add a repository variable `MACOS_RUNNER` set to `macos-26-intel` to use Intel Macs (slower, same Xcode) |
 | "No profiles for '…' were found" / signing errors | Check the API key has **Admin** access, and that the bundle ID variable exactly matches step 2 |
 | "No suitable application records were found" | The app wasn't created in App Store Connect (step 3), or it uses a different bundle ID |
 | Build or test failures | Open the failed run in **Actions** and share the error with Claude |
