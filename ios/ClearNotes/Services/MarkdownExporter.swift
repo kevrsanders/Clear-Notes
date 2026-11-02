@@ -17,6 +17,14 @@ enum MarkdownExporter {
         if !meeting.summary.isEmpty {
             lines += ["## Summary", "", meeting.summary, ""]
         }
+        if !meeting.topics.isEmpty {
+            lines += ["## Topics", ""]
+            for topic in meeting.topics {
+                lines.append("**\(topic.start.clockString)–\(topic.end.clockString) \(topic.title)**")
+                lines += topic.points.map { "- \($0)" }
+                lines.append("")
+            }
+        }
         if !meeting.decisions.isEmpty {
             lines += ["## Decisions", ""]
             lines += meeting.decisions.map { "- \($0)" }

@@ -18,6 +18,8 @@ struct GeneratedAction {
 @available(iOS 26.0, *)
 @Generable
 struct ChunkInsights {
+    @Guide(description: "A title of two to five words for what this part of the meeting was mostly about, e.g. 'Launch timing'")
+    var topic: String
     @Guide(description: "Up to six main points discussed, each a short sentence")
     var keyPoints: [String]
     @Guide(description: "Decisions that were clearly agreed. Leave empty if none.")
@@ -63,18 +65,26 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         var keyPoints: [String] = []
         var decisions: [String] = []
         var actions: [ExtractedAction] = []
+        var topics: [Topic] = []
 
-        for chunk in chunks(of: segments, labels: labels) {
+        let parts = chunks(of: segments, labels: labels)
+        for chunk in parts {
             let session = LanguageModelSession(instructions: Self.instructions)
             var prompt = "Extract the key points, decisions and actions from this part of a meeting transcript.\n\n"
             if !userNotes.isEmpty {
                 prompt += "The note-taker wrote these notes, which show what they thought mattered:\n\(userNotes)\n\n"
             }
-            prompt += "Transcript:\n\(chunk)"
+            prompt += "Transcript:\n\(chunk.text)"
 
             let result = try await session.respond(to: prompt, generating: ChunkInsights.self).content
             keyPoints += result.keyPoints
             decisions += result.decisions
+            topics.append(Topic(
+                title: result.topic.trimmingCharacters(in: .whitespacesAndNewlines),
+                start: chunk.start,
+                end: chunk.end,
+                points: Array(result.keyPoints.prefix(3))
+            ))
             actions += result.actions.map {
                 ExtractedAction(
                     task: $0.task,
@@ -99,23 +109,36 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
             title: overview.title,
             summary: overview.summary,
             decisions: decisions,
-            actions: actions
+            actions: actions,
+            // One part covers the whole meeting, so topics would only repeat the summary.
+            topics: topics.count > 1 ? topics.filter { !$0.title.isEmpty } : []
         )
     }
 
-    private func chunks(of segments: [TranscriptSegment], labels: [String: String]) -> [String] {
-        var chunks: [String] = []
-        var current = ""
+    private struct Chunk {
+        var text = ""
+        var start: TimeInterval
+        var end: TimeInterval
+    }
+
+    /// Splits the transcript into parts small enough for the model. Each part becomes a topic.
+    private func chunks(of segments: [TranscriptSegment], labels: [String: String]) -> [Chunk] {
+        var chunks: [Chunk] = []
+        var current: Chunk?
         for segment in segments {
             let speaker = segment.speakerID.flatMap { labels[$0] } ?? "Unknown"
             let line = "[\(segment.start.clockString)] \(speaker): \(segment.text)\n"
-            if current.count + line.count > chunkCharacterLimit && !current.isEmpty {
-                chunks.append(current)
-                current = ""
+            if let full = current, full.text.count + line.count > chunkCharacterLimit {
+                chunks.append(full)
+                current = nil
             }
-            current += line
+            if current == nil {
+                current = Chunk(start: segment.start, end: segment.end)
+            }
+            current?.text += line
+            current?.end = segment.end
         }
-        if !current.isEmpty { chunks.append(current) }
+        if let current { chunks.append(current) }
         return chunks
     }
 }

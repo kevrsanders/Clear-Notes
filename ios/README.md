@@ -14,6 +14,9 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
 - **AI notes on the device**:
   - On iPhones with Apple Intelligence (iOS 26+), the on-device Foundation Models framework writes a title, summary, decisions and actions. Long meetings are processed in chunks.
   - On other iPhones, a rules-based extractor finds commitments ("Priya will send… by Friday"), decisions ("we agreed…") and lines you marked in your notes.
+- **Notes that read like a page**: summary, **topics with time ranges** (tap one to jump to that point in the transcript) and decisions on one surface.
+- **One-tap follow-ups**: *List actions*, *Write follow-up email* and *Draft project plan*. Drafts are built only from the meeting's own notes and accepted actions. On iPhones with Apple Intelligence they're rewritten into natural prose on the device, with an instruction to keep every fact. They're editable, with Copy and Share.
+- **Talk time**: each speaker's share of the conversation, as percentages and a coloured bar.
 - **Action review**: AI suggestions arrive as *To review*, and you accept or dismiss each one. Every action links back to the transcript line it came from (**Source**).
 - **Actions tab**: every open action across all meetings, with a badge count.
 - **Search** across titles, summaries, notes and transcripts.

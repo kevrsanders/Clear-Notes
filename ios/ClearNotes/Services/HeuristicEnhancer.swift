@@ -58,9 +58,85 @@ struct HeuristicEnhancer: NotesEnhancer {
             title: nil,
             summary: Self.summary(segments: segments, userNotes: userNotes),
             decisions: Self.unique(decisions),
-            actions: Self.unique(actions, by: \.task)
+            actions: Self.unique(actions, by: \.task),
+            topics: Self.topics(in: segments)
         )
     }
+
+    // MARK: - Topics
+
+    /// Target length of a topic window. Meetings shorter than two windows get no topics.
+    static let topicWindow: TimeInterval = 5 * 60
+
+    /// Splits the meeting into roughly five-minute windows (at line boundaries) and titles
+    /// each one with its most frequent meaningful words, e.g. "Budget and hosting".
+    static func topics(in segments: [TranscriptSegment]) -> [Topic] {
+        guard let first = segments.first, let last = segments.last,
+              last.end - first.start >= topicWindow * 2
+        else { return [] }
+
+        var windows: [[TranscriptSegment]] = [[]]
+        var windowStart = first.start
+        for segment in segments {
+            if segment.start - windowStart >= topicWindow && !windows[windows.count - 1].isEmpty {
+                windows.append([])
+                windowStart = segment.start
+            }
+            windows[windows.count - 1].append(segment)
+        }
+
+        return windows.compactMap { window in
+            guard let start = window.first?.start, let end = window.last?.end else { return nil }
+            let keywords = Self.keywords(in: window.map(\.text).joined(separator: " "), limit: 2)
+            guard !keywords.isEmpty else { return nil }
+            let title = keywords.joined(separator: " and ")
+            let points = window
+                .flatMap { sentences(in: $0.text) }
+                .filter { $0.split(separator: " ").count >= 6 }
+                .sorted { $0.count > $1.count }
+                .prefix(2)
+            return Topic(
+                title: title.prefix(1).uppercased() + title.dropFirst(),
+                start: start,
+                end: end,
+                points: Array(points)
+            )
+        }
+    }
+
+    /// The most frequent words that carry meaning (not filler or common words).
+    static func keywords(in text: String, limit: Int) -> [String] {
+        var counts: [String: Int] = [:]
+        for word in normalized(text).split(separator: " ") where word.count >= 4 {
+            let key = String(word)
+            if !stopWords.contains(key) && !key.contains("'") {
+                counts[key, default: 0] += 1
+            }
+        }
+        return counts
+            .filter { $0.value >= 2 }
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .prefix(limit)
+            .map(\.key)
+    }
+
+    private static let stopWords: Set<String> = [
+        "about", "above", "actually", "after", "again", "against", "also", "always", "another", "anyone",
+        "anything", "around", "back", "basically", "because", "been", "before", "being", "below", "best",
+        "better", "between", "both", "bring", "call", "came", "come", "could", "didn", "does", "doing",
+        "done", "down", "during", "each", "else", "enough", "even", "ever", "every", "everyone", "fine",
+        "first", "from", "further", "gets", "getting", "give", "going", "gone", "good", "great", "guess",
+        "have", "having", "hear", "here", "honestly", "into", "just", "keep", "kind", "know", "last", "later",
+        "least", "less", "like", "little", "long", "look", "looking", "made", "make", "many", "maybe", "mean",
+        "might", "more", "most", "much", "must", "need", "needs", "never", "next", "nice", "obviously", "okay",
+        "once", "only", "other", "over", "part", "people", "point", "pretty", "probably", "quite", "really",
+        "right", "said", "same", "saying", "says", "seem", "should", "since", "some", "something", "sort",
+        "still", "sure", "take", "talk", "talking", "tell", "than", "thank", "thanks", "that", "their", "them",
+        "then", "there", "these", "they", "thing", "things", "think", "this", "those", "though", "thought",
+        "through", "time", "today", "together", "very", "want", "wanted", "week", "well", "went", "were",
+        "what", "when", "where", "whether", "which", "while", "will", "with", "within", "without", "work",
+        "would", "yeah", "year", "your", "yours",
+    ]
 
     // MARK: - Helpers
 

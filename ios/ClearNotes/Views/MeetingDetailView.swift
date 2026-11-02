@@ -18,6 +18,7 @@ struct MeetingDetailView: View {
     @State private var isRenaming = false
     @State private var draftTitle = ""
     @State private var confirmDelete = false
+    @State private var followUp: FollowUpKind?
 
     private var toReview: [ActionItem] { sortedActions.filter { $0.status == .suggested } }
     private var open: [ActionItem] { sortedActions.filter { $0.status == .open } }
@@ -64,6 +65,11 @@ struct MeetingDetailView: View {
         .background { GlowBackground() }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
+        .sheet(item: $followUp) { kind in
+            FollowUpSheet(kind: kind, meeting: meeting)
+                .presentationDetents([.large])
+                .presentationCornerRadius(32)
+        }
         .sheet(item: $namingSpeaker) { speaker in
             SpeakerNamingSheet(meeting: meeting, speaker: speaker)
                 .presentationDetents([.fraction(0.75), .large])
@@ -172,6 +178,11 @@ struct MeetingDetailView: View {
                                         .font(.caption.weight(.medium))
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
+                                    if let share = talkShares[speaker.id] {
+                                        Text("\(Int((share * 100).rounded()))%")
+                                            .font(.caption2.weight(.semibold).monospacedDigit())
+                                            .foregroundStyle(Theme.textSecondary)
+                                    }
                                     if speaker.name == nil {
                                         Text("Tap to name")
                                             .font(.caption2.weight(.semibold))
@@ -184,6 +195,9 @@ struct MeetingDetailView: View {
                             .accessibilityLabel(speaker.name == nil ? "Name \(speaker.displayName)" : "Rename \(speaker.displayName)")
                         }
                     }
+                }
+                if !talkShares.isEmpty {
+                    talkTimeBar
                 }
             }
             .cardStyle(padding: 16)
@@ -225,6 +239,40 @@ struct MeetingDetailView: View {
         }
     }
 
+    // MARK: - Talk time
+
+    private var talkShares: [String: Double] {
+        TalkTime.shares(meeting.talkTime)
+    }
+
+    /// One coloured segment per speaker, sized by their share of talk time.
+    private var talkTimeBar: some View {
+        let shares = talkShares
+        let speaking = meeting.speakers.filter { (shares[$0.id] ?? 0) > 0 }
+        let total = meeting.talkTime.values.reduce(0, +)
+        return VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geometry in
+                let available = geometry.size.width - CGFloat(max(speaking.count - 1, 0)) * 2
+                HStack(spacing: 2) {
+                    ForEach(speaking) { speaker in
+                        Capsule()
+                            .fill(Theme.speakerColor(number: speaker.number))
+                            .frame(width: max(4, available * CGFloat(shares[speaker.id] ?? 0)))
+                    }
+                }
+            }
+            .frame(height: 8)
+            .clipShape(Capsule())
+            .accessibilityElement()
+            .accessibilityLabel(speaking.map { "\($0.displayName) \(Int(((shares[$0.id] ?? 0) * 100).rounded())) percent" }.joined(separator: ", "))
+
+            Text("Talk time · \(total.durationString)")
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+        }
+        .padding(.top, 4)
+    }
+
     // MARK: - Overview
 
     private var overviewPane: some View {
@@ -242,29 +290,8 @@ struct MeetingDetailView: View {
                 .cardStyle()
             }
 
-            VStack(alignment: .leading, spacing: 14) {
-                CardHeader(title: "Summary", systemImage: "sparkles")
-                BulletList(text: meeting.summary.isEmpty ? "No summary yet." : meeting.summary)
-            }
-            .cardStyle()
-
-            if !meeting.decisions.isEmpty {
-                VStack(alignment: .leading, spacing: 14) {
-                    CardHeader(title: "Decisions", systemImage: "signpost.right.fill", tint: Theme.success)
-                    ForEach(Array(meeting.decisions.enumerated()), id: \.offset) { index, decision in
-                        HStack(alignment: .top, spacing: 12) {
-                            Text("\(index + 1)")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 22, height: 22)
-                                .background(Theme.success, in: Circle())
-                            Text(decision)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                .cardStyle()
-            }
+            document
+            followUps
 
             if !toReview.isEmpty {
                 Button {
@@ -297,6 +324,95 @@ struct MeetingDetailView: View {
                     .padding(.horizontal, 4)
             }
         }
+    }
+
+    /// Summary, topics and decisions on one surface, so the notes read like a page.
+    private var document: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 14) {
+                CardHeader(title: "Summary", systemImage: "sparkles")
+                BulletList(text: meeting.summary.isEmpty ? "No summary yet." : meeting.summary)
+            }
+
+            if !meeting.topics.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 16) {
+                    CardHeader(title: "Topics", systemImage: "list.bullet.rectangle.portrait")
+                    ForEach(meeting.topics) { topic in
+                        Button {
+                            jump(to: topic)
+                        } label: {
+                            TopicRow(topic: topic)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens the transcript at this point")
+                    }
+                }
+            }
+
+            if !meeting.decisions.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 14) {
+                    CardHeader(title: "Decisions", systemImage: "signpost.right.fill", tint: Theme.success)
+                    ForEach(Array(meeting.decisions.enumerated()), id: \.offset) { index, decision in
+                        HStack(alignment: .top, spacing: 12) {
+                            Text("\(index + 1)")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 22, height: 22)
+                                .background(Theme.success, in: Circle())
+                            Text(decision)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+        }
+        .cardStyle(padding: 22)
+    }
+
+    private var followUps: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Eyebrow("Follow-ups")
+                .padding(.horizontal, 4)
+            VStack(spacing: 0) {
+                ForEach(Array(FollowUpKind.allCases.enumerated()), id: \.element) { index, kind in
+                    if index > 0 {
+                        Divider().padding(.leading, 52)
+                    }
+                    Button {
+                        followUp = kind
+                    } label: {
+                        HStack(spacing: 12) {
+                            IconTile(systemName: kind.systemImage, tint: FollowUpStyle.tint(for: kind), size: 40)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(kind.title)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text(kind.subtitle)
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.bold))
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .cardStyle(padding: 14)
+        }
+    }
+
+    /// Opens the transcript at the first line of a topic.
+    private func jump(to topic: Topic) {
+        guard let segment = meeting.segments.first(where: { $0.end > topic.start }) else { return }
+        withAnimation(.snappy) { pane = .transcript }
+        highlightedSegment = segment.id
     }
 
     // MARK: - Actions
@@ -612,5 +728,44 @@ private struct ProcessingCard: View {
                     .foregroundStyle(Theme.textSecondary)
             }
         }
+    }
+}
+
+/// A topic: time range, title and a few points.
+private struct TopicRow: View {
+    let topic: Topic
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("\(topic.start.clockString)–\(topic.end.clockString)")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(Theme.brand)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.brand.opacity(0.12), in: Capsule())
+                Text(topic.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            ForEach(topic.points, id: \.self) { point in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("•")
+                        .foregroundStyle(Theme.textTertiary)
+                    Text(point)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 4)
+            }
+        }
+        .contentShape(Rectangle())
     }
 }

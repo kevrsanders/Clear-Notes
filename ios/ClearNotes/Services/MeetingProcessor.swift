@@ -81,6 +81,7 @@ enum MeetingProcessor {
         }
         meeting.summary = insights.summary
         meeting.decisions = insights.decisions
+        meeting.topics = insights.topics
 
         // Replace earlier suggestions, but keep anything the user has already reviewed.
         let reviewed = meeting.actions.filter { $0.status != .suggested }

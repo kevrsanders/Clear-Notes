@@ -104,6 +104,33 @@ v1 looked like a stock iOS settings screen: grey grouped lists, hairline rows, s
 
 **Notes**: card with an editor.
 
+### 3a. Overview as a document (v2.1)
+Replaces the stack of Summary / Decisions cards with **one document surface** (a single `Card`, padding 22), so the notes read like a page. The v2 tokens, colours and type stay the same.
+
+1. **Summary**: `GradientIcon` sparkles + "Summary" (Title 3 bold), bullets with brand dots
+2. Hairline divider
+3. **Topics**: `GradientIcon` list icon + "Topics". One row per topic: a monospaced time-range chip ("0:00–10:12", brand tint) and the topic title (headline), then 1–3 bullet points (subhead, secondary). Tapping a topic opens the Transcript at that time and highlights the first line
+4. Hairline divider
+5. **Decisions**: numbered green circles (as before)
+
+Below the document:
+- **Follow-ups** card: three rows separated by hairlines, each a 40pt tinted icon tile + title + subtitle + chevron:
+  - *List actions*: "Owners and due dates, ready to paste" (`checklist`, brand)
+  - *Write follow-up email*: "A thank-you with decisions and next steps" (`envelope`, teal `#14B8A6`)
+  - *Draft project plan*: "Goals, workstreams and timeline" (`doc.text`, orange `#FB923C`)
+- Then the "N actions to review" card and the source footnote (as before)
+
+### 3b. Talk time (in the Speakers card)
+- Under each avatar's name, the speaker's share of talk time ("42%", caption, secondary)
+- Under the avatar row, a 8pt-tall rounded **stacked bar** with one segment per speaker in their colour (2pt gaps), plus a footnote "Talk time · 34 min"
+
+### 3c. Follow-up sheet (large detent)
+- Title row: tinted icon tile + the follow-up name, close button
+- Status line: "Written on this iPhone by Apple Intelligence" (or "From your meeting notes" for templates)
+- Editable draft in a card (body text; email has a "Subject:" first line)
+- Bottom bar (glass): **Copy** (SecondaryButton), **Share** (PrimaryButton), and a "Rewrite" (`arrow.clockwise`) GlassCircleButton
+- While writing: skeleton lines and "Writing on this iPhone…"
+
 ### 4. Speaker naming sheet (medium detent)
 - 72pt avatar in the speaker colour, title "Who is Speaker 2?"
 - Eyebrow "THEY SAID", then 2 quote cards (italic, with timestamps) to help recognise the voice

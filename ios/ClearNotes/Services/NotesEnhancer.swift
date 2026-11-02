@@ -13,6 +13,7 @@ struct MeetingInsights: Equatable, Sendable {
     var summary: String
     var decisions: [String]
     var actions: [ExtractedAction]
+    var topics: [Topic] = []
 }
 
 /// Turns a transcript and the user's own notes into a summary, decisions and suggested actions.

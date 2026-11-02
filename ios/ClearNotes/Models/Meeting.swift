@@ -29,6 +29,15 @@ struct Speaker: Codable, Hashable, Identifiable, Sendable {
     var displayName: String { name ?? "Speaker \(number)" }
 }
 
+/// A stretch of the meeting about one subject, e.g. "Launch timing" from 6:40 to 14:05.
+struct Topic: Codable, Hashable, Identifiable, Sendable {
+    var id = UUID()
+    var title: String
+    var start: TimeInterval
+    var end: TimeInterval
+    var points: [String] = []
+}
+
 enum ProcessingState: String, Codable {
     case processing, ready, failed
 }
@@ -45,6 +54,7 @@ final class Meeting {
     var userNotes: String
     var summary: String
     var decisions: [String]
+    var topics: [Topic] = []
     var segments: [TranscriptSegment]
     var speakers: [Speaker] = []
     var processingStateRaw: String
@@ -105,6 +115,11 @@ final class Meeting {
 
     // MARK: - Speakers
 
+    /// Seconds each speaker talked for, keyed by speaker ID.
+    var talkTime: [String: TimeInterval] {
+        TalkTime.bySpeaker(segments)
+    }
+
     func speaker(withID id: String?) -> Speaker? {
         guard let id else { return nil }
         return speakers.first { $0.id == id }
@@ -151,5 +166,22 @@ final class Meeting {
             return segment
         }
         notesNeedRefresh = processingState == .ready
+    }
+}
+
+enum TalkTime {
+    /// Seconds each speaker talked for, keyed by speaker ID. Lines without a speaker are ignored.
+    static func bySpeaker(_ segments: [TranscriptSegment]) -> [String: TimeInterval] {
+        segments.reduce(into: [:]) { totals, segment in
+            guard let id = segment.speakerID else { return }
+            totals[id, default: 0] += max(0, segment.end - segment.start)
+        }
+    }
+
+    /// Each speaker's share of the total, from 0 to 1.
+    static func shares(_ totals: [String: TimeInterval]) -> [String: Double] {
+        let total = totals.values.reduce(0, +)
+        guard total > 0 else { return [:] }
+        return totals.mapValues { $0 / total }
     }
 }
