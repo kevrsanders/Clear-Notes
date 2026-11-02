@@ -7,6 +7,7 @@ enum SettingsKeys {
     static let identifySpeakers = "identifySpeakers"
     static let speakerModelsReady = "speakerModelsReady"
     static let myName = "myName"
+    static let audioRetention = "audioRetentionDays"
 }
 
 struct SettingsView: View {
@@ -15,6 +16,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @AppStorage(SettingsKeys.speakerModelsReady) private var speakerModelsReady = false
     @AppStorage(SettingsKeys.myName) private var myName = ""
+    @AppStorage(SettingsKeys.audioRetention) private var audioRetention = AudioRetention.default.rawValue
     @State private var isDownloading = false
     @State private var downloadError: String?
 
@@ -50,7 +52,23 @@ struct SettingsView: View {
                         toggle("Remind me to tell attendees", systemImage: "person.wave.2", isOn: $showConsentReminder)
                     }
 
-                    section("Speakers", footer: "Keeps the audio on this iPhone only until voices are separated, then deletes it. The speaker models are downloaded once. No meeting data is sent.") {
+                    section("Recordings", footer: (AudioRetention(rawValue: audioRetention) ?? .default).promise + " Recordings are excluded from backups and never leave this iPhone.") {
+                        Picker(selection: $audioRetention) {
+                            ForEach(AudioRetention.allCases) { option in
+                                Text(option.title).tag(option.rawValue)
+                            }
+                        } label: {
+                            Label {
+                                Text("Keep recordings")
+                            } icon: {
+                                Image(systemName: "waveform")
+                                    .foregroundStyle(Theme.brand)
+                            }
+                        }
+                        .tint(Theme.brand)
+                    }
+
+                    section("Speakers", footer: "Voices are separated on this iPhone after each meeting. The speaker models are downloaded once. No meeting data is sent.") {
                         toggle("Identify speakers", systemImage: "person.2.wave.2", isOn: $identifySpeakers)
                             .disabled(!SpeakerSeparators.isSupported)
                         Divider()

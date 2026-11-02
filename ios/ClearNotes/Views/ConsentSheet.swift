@@ -19,7 +19,7 @@ struct ConsentSheet: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 point("megaphone.fill", "Tell everyone you're taking AI-assisted notes.")
-                point("lock.iphone", "Speech is transcribed on this iPhone. Audio is deleted once speakers are identified.")
+                point("lock.iphone", "Speech is transcribed on this iPhone. " + AudioRetention.current.promise)
                 point("cross.case.fill", "Don't use Clear Notes for clinical consultations or patient information.")
             }
 

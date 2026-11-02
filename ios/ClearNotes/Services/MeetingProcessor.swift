@@ -45,20 +45,26 @@ enum MeetingProcessor {
         meeting.processingStage = nil
     }
 
-    /// Finishes meetings that were still processing when the app was closed, and removes stray audio.
+    /// Finishes meetings that were still processing when the app was closed, deletes recordings
+    /// past their keep-until date, and removes stray audio.
     static func resumeUnfinished(in context: ModelContext) async {
         let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
-        RecordingStore.deleteOrphans(keeping: Set(meetings.compactMap(\.pendingAudioFileName)))
+        for meeting in meetings {
+            if let expiry = meeting.audioExpiresAt, expiry < .now {
+                meeting.deleteAudio()
+            }
+        }
+        RecordingStore.deleteOrphans(keeping: Set(meetings.flatMap { [$0.pendingAudioFileName, $0.audioFileName] }.compactMap { $0 }))
         for meeting in meetings where meeting.processingState == .processing {
             await process(meeting)
         }
     }
 
     private static func identifySpeakers(in meeting: Meeting, audioFileName: String, separator: SpeakerSeparating?) async {
-        // The audio is deleted whatever happens: it exists only for this step.
+        // Afterwards the audio is kept for playback or deleted, as the user chose.
         defer {
-            RecordingStore.delete(audioFileName)
             meeting.pendingAudioFileName = nil
+            meeting.keepAudio(audioFileName)
         }
         guard let separator else { return }
         do {

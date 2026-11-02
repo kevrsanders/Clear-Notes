@@ -37,3 +37,21 @@ final class RecorderLogicTests: XCTestCase {
         XCTAssertEqual(AutomaticGain.desiredGain(forLevel: 0.6), 1)
     }
 }
+
+final class AudioRetentionTests: XCTestCase {
+    private let date = Date(timeIntervalSince1970: 1_793_000_000)
+
+    func testExpiryDates() throws {
+        let week = try XCTUnwrap(AudioRetention.oneWeek.expiry(from: date))
+        XCTAssertEqual(week.timeIntervalSince(date), 7 * 24 * 3600, accuracy: 3600)
+        XCTAssertNil(AudioRetention.untilDeleted.expiry(from: date))
+        XCTAssertNil(AudioRetention.whenNotesReady.expiry(from: date))
+    }
+
+    func testWhichOptionsKeepAudio() {
+        XCTAssertFalse(AudioRetention.whenNotesReady.keepsAudio)
+        XCTAssertTrue(AudioRetention.oneDay.keepsAudio)
+        XCTAssertTrue(AudioRetention.untilDeleted.keepsAudio)
+        XCTAssertEqual(AudioRetention.default, .oneWeek)
+    }
+}

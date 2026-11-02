@@ -64,8 +64,11 @@ final class Meeting {
     var speakerNote: String?
     /// Which engine produced the summary and actions, shown to the user for transparency.
     var insightsSource: String?
-    /// Temporary audio kept only until speakers are identified, then deleted.
+    /// Audio waiting for speaker separation.
     var pendingAudioFileName: String?
+    /// Audio kept for playback, deleted at `audioExpiresAt` (never, if nil) or by the user.
+    var audioFileName: String?
+    var audioExpiresAt: Date?
     /// Set when speakers are renamed after notes were written, so the user can refresh them.
     var notesNeedRefresh: Bool = false
 
@@ -111,6 +114,39 @@ final class Meeting {
 
     static func defaultTitle(for date: Date) -> String {
         "Meeting · " + date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
+    }
+
+    // MARK: - Recording
+
+    /// The kept recording, if it is still on the iPhone.
+    var playableAudioURL: URL? {
+        guard let audioFileName else { return nil }
+        let url = RecordingStore.url(for: audioFileName)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Keeps a finished recording for playback, or deletes it, depending on the user's setting.
+    func keepAudio(_ fileName: String?, retention: AudioRetention = .current) {
+        guard let fileName else { return }
+        if retention.keepsAudio {
+            audioFileName = fileName
+            audioExpiresAt = retention.expiry(from: createdAt)
+        } else {
+            RecordingStore.delete(fileName)
+        }
+    }
+
+    func deleteAudio() {
+        RecordingStore.delete(audioFileName)
+        audioFileName = nil
+        audioExpiresAt = nil
+    }
+
+    /// Removes every audio file belonging to this meeting, e.g. before deleting it.
+    func deleteAllAudio() {
+        RecordingStore.delete(pendingAudioFileName)
+        pendingAudioFileName = nil
+        deleteAudio()
     }
 
     // MARK: - Speakers

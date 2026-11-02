@@ -55,8 +55,14 @@ enum SpeakerSeparators {
 /// On-device speaker separation using FluidAudio's Core ML models (pyannote-based).
 struct FluidSpeakerSeparator: SpeakerSeparating {
     func separate(audioAt url: URL) async throws -> [SpeakerTurn] {
-        let samples = try AudioSamples.load(from: url)
-        guard !samples.isEmpty else { return [] }
+        var samples = try AudioSamples.load(from: url)
+        // Too short to tell voices apart.
+        guard samples.count >= AudioSamples.sampleRate * 3 else { return [] }
+        // Pad short clips with silence so the model always gets at least one full window.
+        let minimum = AudioSamples.sampleRate * 12
+        if samples.count < minimum {
+            samples += [Float](repeating: 0, count: minimum - samples.count)
+        }
         let manager = OfflineDiarizerManager()
         try await manager.prepareModels()
         let result = try await manager.process(audio: samples)
@@ -72,6 +78,8 @@ struct FluidSpeakerSeparator: SpeakerSeparating {
 #endif
 
 enum AudioSamples {
+    static let sampleRate = 16_000
+
     /// Reads the 16 kHz mono file written during recording as floating-point samples.
     static func load(from url: URL) throws -> [Float] {
         let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)

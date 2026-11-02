@@ -19,6 +19,21 @@ struct MeetingDetailView: View {
     @State private var draftTitle = ""
     @State private var confirmDelete = false
     @State private var followUp: FollowUpKind?
+    @State private var playback = AudioPlayback()
+    @State private var confirmDeleteAudio = false
+
+    /// The transcript line being played, for highlighting.
+    private var playingSegment: UUID? {
+        guard playback.isPlaying else { return nil }
+        let time = playback.currentTime
+        return meeting.segments.last(where: { $0.start <= time })?.id
+    }
+
+    /// Plays the recording from a moment, when there is one.
+    private var playHandler: ((TimeInterval) -> Void)? {
+        guard playback.isLoaded else { return nil }
+        return { time in playback.play(from: time) }
+    }
 
     private var toReview: [ActionItem] { sortedActions.filter { $0.status == .suggested } }
     private var open: [ActionItem] { sortedActions.filter { $0.status == .open } }
@@ -63,6 +78,30 @@ struct MeetingDetailView: View {
             }
         }
         .background { GlowBackground() }
+        .safeAreaInset(edge: .bottom) {
+            if playback.isLoaded {
+                PlayerBar(playback: playback, expiresAt: meeting.audioExpiresAt)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .task(id: meeting.audioFileName) {
+            if let url = meeting.playableAudioURL {
+                playback.load(url)
+            } else {
+                playback.unload()
+            }
+        }
+        .onDisappear { playback.stop() }
+        .confirmationDialog("Delete the recording?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
+            Button("Delete recording", role: .destructive) {
+                playback.unload()
+                meeting.deleteAudio()
+            }
+        } message: {
+            Text("The transcript and notes are kept. Only the audio is deleted.")
+        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .sheet(item: $followUp) { kind in
@@ -71,7 +110,7 @@ struct MeetingDetailView: View {
                 .presentationCornerRadius(32)
         }
         .sheet(item: $namingSpeaker) { speaker in
-            SpeakerNamingSheet(meeting: meeting, speaker: speaker)
+            SpeakerNamingSheet(meeting: meeting, speaker: speaker, onPlay: playHandler)
                 .presentationDetents([.fraction(0.75), .large])
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(32)
@@ -86,7 +125,8 @@ struct MeetingDetailView: View {
         }
         .confirmationDialog("Delete this meeting?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                RecordingStore.delete(meeting.pendingAudioFileName)
+                playback.unload()
+                meeting.deleteAllAudio()
                 context.delete(meeting)
                 dismiss()
             }
@@ -141,10 +181,17 @@ struct MeetingDetailView: View {
                 }
                 .disabled(meeting.processingState == .processing)
                 Divider()
+                if meeting.audioFileName != nil {
+                    Button(role: .destructive) {
+                        confirmDeleteAudio = true
+                    } label: {
+                        Label("Delete recording", systemImage: "waveform.slash")
+                    }
+                }
                 Button(role: .destructive) {
                     confirmDelete = true
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Label("Delete meeting", systemImage: "trash")
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -516,9 +563,11 @@ struct MeetingDetailView: View {
                     showsAvatars: !meeting.speakers.isEmpty,
                     allSpeakers: meeting.speakers,
                     highlightedSegment: highlightedSegment,
+                    playingSegment: playingSegment,
                     sourceCounts: counts,
                     onName: { namingSpeaker = $0 },
-                    onReassign: { segmentID, speakerID in meeting.reassignSegment(segmentID, to: speakerID) }
+                    onReassign: { segmentID, speakerID in meeting.reassignSegment(segmentID, to: speakerID) },
+                    onPlay: playHandler
                 )
             }
         }
@@ -531,9 +580,12 @@ struct MeetingDetailView: View {
         var showsAvatars: Bool
         var allSpeakers: [Speaker]
         var highlightedSegment: UUID?
+        var playingSegment: UUID?
         var sourceCounts: [UUID: Int]
         var onName: (Speaker) -> Void
         var onReassign: (UUID, String) -> Void
+        /// Plays the recording from a time, when the recording is kept.
+        var onPlay: ((TimeInterval) -> Void)?
 
         var body: some View {
             HStack(alignment: .top, spacing: 12) {
@@ -573,21 +625,33 @@ struct MeetingDetailView: View {
 
         private func segmentView(_ segment: TranscriptSegment) -> some View {
             let isHighlighted = highlightedSegment == segment.id
+            let isPlaying = playingSegment == segment.id
             let count = sourceCounts[segment.id] ?? 0
             return VStack(alignment: .leading, spacing: 6) {
                 Text(segment.text)
                     .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(isPlaying ? Theme.brand : Color.primary)
+                    .onTapGesture { onPlay?(segment.start) }
+                    .accessibilityHint(onPlay == nil ? "" : "Plays the recording from this line")
                 if count > 0 {
                     Chip(text: "Source of \(count) action\(count == 1 ? "" : "s")", systemImage: "quote.opening", tint: Theme.brand)
                 }
             }
-            .padding(isHighlighted ? 10 : 0)
+            .padding(isHighlighted || isPlaying ? 10 : 0)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isHighlighted ? Theme.brand.opacity(0.10) : .clear)
+                    .fill(isHighlighted || isPlaying ? Theme.brand.opacity(0.10) : .clear)
             )
+            .animation(.easeOut(duration: 0.2), value: isPlaying)
             .id(segment.id)
             .contextMenu {
+                if let onPlay {
+                    Button {
+                        onPlay(segment.start)
+                    } label: {
+                        Label("Play from here", systemImage: "play.fill")
+                    }
+                }
                 Button {
                     UIPasteboard.general.string = segment.text
                 } label: {
@@ -687,7 +751,7 @@ private struct ProcessingCard: View {
                     detail: NotesEnhancers.isAppleIntelligenceAvailable ? "Apple Intelligence, on this iPhone" : "On this iPhone",
                     state: stage == .notes ? .active : .pending
                 )
-                Label("Audio is deleted as soon as speakers are identified.", systemImage: "lock.fill")
+                Label(AudioRetention.current.promise, systemImage: "lock.fill")
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
             }
@@ -767,5 +831,61 @@ private struct TopicRow: View {
             }
         }
         .contentShape(Rectangle())
+    }
+}
+
+/// Floating glass player for the meeting's recording.
+private struct PlayerBar: View {
+    let playback: AudioPlayback
+    let expiresAt: Date?
+
+    private var keptUntil: String {
+        guard let expiresAt else { return "Kept until you delete it" }
+        return "Kept until " + expiresAt.formatted(.dateTime.day().month(.abbreviated))
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: playback.togglePlayback) {
+                Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.brandGradient, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(playback.isPlaying ? "Pause recording" : "Play recording")
+
+            VStack(spacing: 2) {
+                Slider(
+                    value: Binding(get: { playback.currentTime }, set: { playback.seek(to: $0) }),
+                    in: 0...max(playback.duration, 1)
+                )
+                .tint(Theme.brand)
+                .accessibilityLabel("Position")
+                HStack {
+                    Text(playback.currentTime.clockString)
+                    Spacer()
+                    Text(keptUntil)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(playback.duration.clockString)
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(Theme.textSecondary)
+            }
+
+            Button(action: playback.cycleRate) {
+                Text(playback.rate == 1 ? "1×" : String(format: "%g×", playback.rate))
+                    .font(.footnote.weight(.bold).monospacedDigit())
+                    .frame(width: 44, height: 32)
+                    .background(Color.primary.opacity(0.08), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Playback speed")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .glass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 }

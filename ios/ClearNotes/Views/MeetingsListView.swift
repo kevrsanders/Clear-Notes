@@ -131,7 +131,7 @@ struct MeetingsListView: View {
             Text("Your meetings, minus the note-taking")
                 .font(.title3.bold())
                 .multilineTextAlignment(.center)
-            Text("Tap Record and put your iPhone on the table. Clear Notes transcribes on this iPhone, works out who said what, and turns it into a summary and actions. Audio is never kept.")
+            Text("Tap Record and put your iPhone on the table. Clear Notes transcribes on this iPhone, works out who said what, and turns it into a summary and actions. Nothing leaves your iPhone.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -149,7 +149,7 @@ struct MeetingsListView: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button(role: .destructive) {
-                RecordingStore.delete(meeting.pendingAudioFileName)
+                meeting.deleteAllAudio()
                 context.delete(meeting)
             } label: {
                 Label("Delete", systemImage: "trash")
@@ -201,14 +201,18 @@ struct MeetingsListView: View {
 
     private func saveMeeting(_ result: RecordingResult, notes: String) {
         let start = Date().addingTimeInterval(-result.duration)
+        let separatesSpeakers = identifySpeakers && SpeakerSeparators.isSupported
         let meeting = Meeting(
             title: Meeting.defaultTitle(for: start),
             createdAt: start,
             duration: result.duration,
             userNotes: notes,
             segments: result.segments,
-            pendingAudioFileName: result.audioFileName
+            pendingAudioFileName: separatesSpeakers ? result.audioFileName : nil
         )
+        if !separatesSpeakers {
+            meeting.keepAudio(result.audioFileName)
+        }
         context.insert(meeting)
         finishedMeeting = meeting
         Task { await MeetingProcessor.process(meeting) }

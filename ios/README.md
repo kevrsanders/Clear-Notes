@@ -1,6 +1,6 @@
 # Clear Notes for iPhone (Phase 1)
 
-A native SwiftUI app that transcribes meetings on the iPhone, works out who said what, and turns it into a summary, decisions and actions. There is no meeting bot and no meeting data goes to a server. Audio is kept only until speakers are identified, then deleted.
+A native SwiftUI app that transcribes meetings on the iPhone, works out who said what, and turns it into a summary, decisions and actions. There is no meeting bot and no meeting data goes to a server. Recordings stay on the iPhone for playback and are deleted automatically after the period chosen in Settings (7 days by default, or as soon as notes are ready).
 
 Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in [docs/mockups/v2](../docs/mockups/v2) (light and dark).
 
@@ -9,7 +9,8 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
 - **Live capture**: big timer, level meter and a live transcript. Pause and resume. Recording continues when the screen locks, and pauses automatically for phone calls.
 - **On-device transcription**: on iOS 26 it uses Apple's SpeechAnalyzer/SpeechTranscriber, a long-form model built for meetings and people further from the phone. On earlier versions it uses the older speech recogniser with `requiresOnDeviceRecognition`; a setting (on by default) refuses to record if your language can't be transcribed on the device.
 - **Distant voices**: quiet audio is boosted automatically (up to about +16 dB, with a soft limiter), and the built-in microphone is set to its all-direction pattern.
-- **Speaker separation**: after you finish, [FluidAudio](https://github.com/FluidInference/FluidAudio) (pyannote models running on the iPhone's Neural Engine) finds who spoke when. Word timings from the transcript split each line at speaker changes. The temporary 16 kHz audio file is deleted as soon as this step ends, whether it succeeds or not.
+- **Playback**: a player bar on each meeting, with 1×/1.5×/2× speed. Tap any transcript line to hear that moment, or play a speaker's lines while naming them. **Settings → Keep recordings** sets how long audio is kept; "Delete recording" removes it sooner. Recordings are excluded from backups.
+- **Speaker separation**: after you finish, [FluidAudio](https://github.com/FluidInference/FluidAudio) (pyannote models running on the iPhone's Neural Engine) finds who spoke when. Word timings from the transcript split each line at speaker changes. Clips under 3 seconds are skipped, and short clips are padded with silence.
 - **One-tap speaker naming**: tap a speaker to see what they said and name them. One name updates every line. Suggestions come from your own name and from people in earlier meetings. "Same person as" merges two voices, and long-pressing a line moves it to another speaker. Once speakers are named, "I'll send it" is credited to whoever said it.
 - **Your own notes** alongside the transcript, with quick **Action** and **Decision** buttons that add time-stamped lines.
 - **AI notes on the device**:

@@ -276,7 +276,7 @@ struct RecordingView: View {
         do {
             try await recorder.start(
                 requireOnDevice: requireOnDevice,
-                captureAudioForSpeakers: identifySpeakers && SpeakerSeparators.isSupported
+                captureAudioForSpeakers: (identifySpeakers && SpeakerSeparators.isSupported) || AudioRetention.current.keepsAudio
             )
         } catch {
             errorMessage = error.localizedDescription
