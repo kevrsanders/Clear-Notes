@@ -21,7 +21,8 @@ enum SpeakerSeparationError: LocalizedError {
 
 /// Finds who spoke when in a recording.
 protocol SpeakerSeparating: Sendable {
-    func separate(audioAt url: URL) async throws -> [SpeakerTurn]
+    /// `expectedSpeakers` fixes the number of voices when the user knows it.
+    func separate(audioAt url: URL, expectedSpeakers: Int?) async throws -> [SpeakerTurn]
 }
 
 enum SpeakerSeparators {
@@ -54,7 +55,7 @@ enum SpeakerSeparators {
 #if canImport(FluidAudio)
 /// On-device speaker separation using FluidAudio's Core ML models (pyannote-based).
 struct FluidSpeakerSeparator: SpeakerSeparating {
-    func separate(audioAt url: URL) async throws -> [SpeakerTurn] {
+    func separate(audioAt url: URL, expectedSpeakers: Int?) async throws -> [SpeakerTurn] {
         var samples = try AudioSamples.load(from: url)
         // Too short to tell voices apart.
         guard samples.count >= AudioSamples.sampleRate * 3 else { return [] }
@@ -63,7 +64,11 @@ struct FluidSpeakerSeparator: SpeakerSeparating {
         if samples.count < minimum {
             samples += [Float](repeating: 0, count: minimum - samples.count)
         }
-        let manager = OfflineDiarizerManager()
+        var config = OfflineDiarizerConfig.default
+        if let expectedSpeakers {
+            config.clustering.numSpeakers = expectedSpeakers
+        }
+        let manager = OfflineDiarizerManager(config: config)
         try await manager.prepareModels()
         let result = try await manager.process(audio: samples)
         return result.segments.map {

@@ -8,6 +8,7 @@ enum SettingsKeys {
     static let speakerModelsReady = "speakerModelsReady"
     static let myName = "myName"
     static let audioRetention = "audioRetentionDays"
+    static let reduceEchoAndNoise = "reduceEchoAndNoise"
 }
 
 struct SettingsView: View {
@@ -17,6 +18,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.speakerModelsReady) private var speakerModelsReady = false
     @AppStorage(SettingsKeys.myName) private var myName = ""
     @AppStorage(SettingsKeys.audioRetention) private var audioRetention = AudioRetention.default.rawValue
+    @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
     @State private var isDownloading = false
     @State private var downloadError: String?
 
@@ -50,6 +52,10 @@ struct SettingsView: View {
                         toggle("Transcribe on this iPhone only", systemImage: "lock.iphone", isOn: $requireOnDevice)
                         Divider()
                         toggle("Remind me to tell attendees", systemImage: "person.wave.2", isOn: $showConsentReminder)
+                    }
+
+                    section("Microphone", footer: "Echo and noise reduction is the processing iPhone uses for speakerphone calls. It cleans up echo and hiss but works best within a metre or two, so it can quieten people further away. Leave it off for meetings round a table. A plugged-in USB conference microphone is used automatically and picks up a room best.") {
+                        toggle("Reduce echo and noise", systemImage: "waveform.badge.minus", isOn: $reduceEchoAndNoise)
                     }
 
                     section("Recordings", footer: (AudioRetention(rawValue: audioRetention) ?? .default).promise + " Recordings are excluded from backups and never leave this iPhone.") {

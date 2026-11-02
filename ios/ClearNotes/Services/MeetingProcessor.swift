@@ -68,7 +68,7 @@ enum MeetingProcessor {
         }
         guard let separator else { return }
         do {
-            let turns = try await separator.separate(audioAt: RecordingStore.url(for: audioFileName))
+            let turns = try await separator.separate(audioAt: RecordingStore.url(for: audioFileName), expectedSpeakers: nil)
             UserDefaults.standard.set(true, forKey: SettingsKeys.speakerModelsReady)
             let assigned = SpeakerAssigner.assign(meeting.segments, turns: turns)
             meeting.segments = assigned.segments
@@ -77,6 +77,42 @@ enum MeetingProcessor {
         } catch {
             meeting.speakerNote = "Speakers couldn't be identified. \(error.localizedDescription)"
         }
+    }
+
+    /// Runs speaker separation again on the kept recording, for a known number of people.
+    /// Speaker names are cleared because the voices are regrouped.
+    static func reidentifySpeakers(
+        in meeting: Meeting,
+        count: Int,
+        separator: SpeakerSeparating? = SpeakerSeparators.best()
+    ) async {
+        guard let separator, let url = meeting.playableAudioURL,
+              inFlight.insert(meeting.persistentModelID).inserted
+        else { return }
+        defer { inFlight.remove(meeting.persistentModelID) }
+        let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Re-check speakers")
+        defer { UIApplication.shared.endBackgroundTask(backgroundTask) }
+
+        let previousState = meeting.processingState
+        meeting.processingState = .processing
+        meeting.processingStage = .speakers
+        do {
+            let turns = try await separator.separate(audioAt: url, expectedSpeakers: count)
+            let unassigned = meeting.segments.map { segment in
+                var segment = segment
+                segment.speakerID = nil
+                return segment
+            }
+            let assigned = SpeakerAssigner.assign(unassigned, turns: turns)
+            meeting.segments = assigned.segments
+            meeting.speakers = assigned.speakers
+            meeting.speakerNote = nil
+            meeting.notesNeedRefresh = previousState == .ready
+        } catch {
+            meeting.speakerNote = "Speakers couldn't be re-checked. \(error.localizedDescription)"
+        }
+        meeting.processingStage = nil
+        meeting.processingState = previousState
     }
 
     static func apply(_ insights: MeetingInsights, to meeting: Meeting) {

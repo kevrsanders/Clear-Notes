@@ -111,7 +111,12 @@ final class MeetingRecorder {
 
     // MARK: - Controls
 
-    func start(requireOnDevice: Bool, captureAudioForSpeakers: Bool, locale: Locale = .current) async throws {
+    func start(
+        requireOnDevice: Bool,
+        captureAudioForSpeakers: Bool,
+        reduceEchoAndNoise: Bool = false,
+        locale: Locale = .current
+    ) async throws {
         guard state == .idle else { return }
 
         #if compiler(>=6.2)
@@ -133,11 +138,22 @@ final class MeetingRecorder {
         }
 
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .default)
+        if reduceEchoAndNoise {
+            // Apple's voice processing (as used for speakerphone calls) needs play-and-record.
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+        } else {
+            try session.setCategory(.record, mode: .default)
+        }
         try session.setActive(true, options: .notifyOthersOnDeactivation)
-        Self.preferOmnidirectionalMicrophone(session)
+        Self.chooseMicrophone(session)
 
         let input = engine.inputNode
+        if reduceEchoAndNoise {
+            // Echo cancellation, noise suppression and its own level control. Works best within
+            // a metre or two; it can quieten people further away.
+            try? input.setVoiceProcessingEnabled(true)
+        }
+        pipe.boostsQuietSpeech = !reduceEchoAndNoise
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { throw RecorderError.noMicrophone }
 
@@ -403,21 +419,36 @@ final class MeetingRecorder {
 
     // MARK: - Audio session
 
-    /// Uses the built-in microphone in its all-direction pattern, which suits a phone on a table.
-    private static func preferOmnidirectionalMicrophone(_ session: AVAudioSession) {
-        guard let microphone = session.availableInputs?.first(where: { $0.portType == .builtInMic }) else { return }
-        try? session.setPreferredInput(microphone)
-        if let source = microphone.dataSources?.first(where: {
-            $0.supportedPolarPatterns?.contains(.omnidirectional) == true
-        }) {
-            try? source.setPreferredPolarPattern(.omnidirectional)
-            try? microphone.setPreferredDataSource(source)
+    /// Picks the best microphone for a meeting round a table.
+    ///
+    /// A plugged-in microphone (USB conference microphone or headset) wins. Otherwise the iPhone's
+    /// bottom microphone is used in its all-direction pattern: with the phone flat and screen-up,
+    /// the back microphone faces the table and sounds muffled.
+    private static func chooseMicrophone(_ session: AVAudioSession) {
+        let inputs = session.availableInputs ?? []
+        let external: [AVAudioSession.Port] = [.usbAudio, .headsetMic, .lineIn]
+        if let plugged = inputs.first(where: { external.contains($0.portType) }) {
+            try? session.setPreferredInput(plugged)
+            return
         }
+        guard let builtIn = inputs.first(where: { $0.portType == .builtInMic }) else { return }
+        try? session.setPreferredInput(builtIn)
+        let sources = builtIn.dataSources ?? []
+        guard let source = sources.first(where: { $0.orientation == .bottom })
+            ?? sources.first(where: { $0.orientation == .front })
+        else { return }
+        if source.supportedPolarPatterns?.contains(.omnidirectional) == true {
+            try? source.setPreferredPolarPattern(.omnidirectional)
+        }
+        try? builtIn.setPreferredDataSource(source)
     }
 
     private func teardownAudio() {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        if engine.inputNode.isVoiceProcessingEnabled {
+            try? engine.inputNode.setVoiceProcessingEnabled(false)
+        }
         ticker?.invalidate()
         ticker = nil
         if let interruptionObserver {
@@ -486,12 +517,14 @@ private final class RecognitionPipe: @unchecked Sendable {
     private var audioFile: AVAudioFile?
     private var converter: AVAudioConverter?
     private let gain = AutomaticGain()
+    /// Set before the tap is installed. Off when Apple's voice processing already levels the audio.
+    var boostsQuietSpeech = true
     private let speakerFormat = AVAudioFormat(
         commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false
     )!
     /// Set before the tap is installed and not changed while audio is flowing.
     var onLevel: (@Sendable (Float) -> Void)?
-    /// Receives every (boosted) buffer, e.g. for the iOS 26 transcriber.
+    /// Receives every buffer sent for transcription, e.g. to the iOS 26 transcriber.
     var onBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
     /// Replaces the request that receives audio and returns the previous one.
@@ -556,18 +589,22 @@ private final class RecognitionPipe: @unchecked Sendable {
     }
 
     private func receive(_ buffer: AVAudioPCMBuffer) {
-        gain.apply(to: buffer)
         lock.lock()
         let current = request
         let file = audioFile
         let converter = converter
         lock.unlock()
-        current?.append(buffer)
-        onBuffer?(buffer)
+        // The kept recording (playback and speaker separation) gets the untouched microphone audio.
         if let file, let converter {
             write(buffer, using: converter, to: file)
         }
         onLevel?(Self.normalisedLevel(of: buffer))
+        // Only the transcriber hears the boosted version.
+        if boostsQuietSpeech {
+            gain.apply(to: buffer)
+        }
+        current?.append(buffer)
+        onBuffer?(buffer)
     }
 
     private func write(_ buffer: AVAudioPCMBuffer, using converter: AVAudioConverter, to file: AVAudioFile) {
@@ -606,18 +643,32 @@ private final class RecognitionPipe: @unchecked Sendable {
     }
 }
 
-/// Lifts quiet audio (people further from the iPhone) towards a steady level, with a soft
-/// limiter so loud voices don't clip. Runs on the audio thread only.
+/// Lifts quiet speech (people further from the iPhone) towards a steady level for the
+/// transcriber. It only adjusts while someone is speaking, so pauses and background hiss
+/// aren't raised, and a limiter near full scale stops loud voices distorting.
+/// Runs on the audio thread only.
 final class AutomaticGain: @unchecked Sendable {
     /// About −20 dBFS: a comfortable speech level for recognition.
     static let targetLevel: Float = 0.1
-    /// At most about +16 dB, so background noise isn't raised too far.
-    static let maximumGain: Float = 6
+    /// At most about +12 dB, so room echo and noise aren't raised too far.
+    static let maximumGain: Float = 4
+    /// Levels this many times above the background count as speech.
+    static let speechRatio: Float = 3
     private(set) var gain: Float = 1
+    private(set) var noiseFloor: Float = 0.003
 
     /// The gain to aim for given a buffer's RMS level.
     static func desiredGain(forLevel rms: Float) -> Float {
         min(maximumGain, max(1, targetLevel / max(rms, 0.002)))
+    }
+
+    /// Passes quiet samples through unchanged and softly limits anything near full scale.
+    static func limit(_ sample: Float) -> Float {
+        let knee: Float = 0.8
+        let magnitude = abs(sample)
+        guard magnitude > knee else { return sample }
+        let limited = knee + (1 - knee) * tanhf((magnitude - knee) / (1 - knee))
+        return sample < 0 ? -limited : limited
     }
 
     func apply(to buffer: AVAudioPCMBuffer) {
@@ -630,15 +681,20 @@ final class AutomaticGain: @unchecked Sendable {
             sum += channels[0][i] * channels[0][i]
         }
         let rms = (sum / Float(count)).squareRoot()
-        let desired = Self.desiredGain(forLevel: rms)
-        // Turn down quickly when speech gets loud, and up slowly so pauses don't pump noise.
-        gain += (desired - gain) * (desired < gain ? 0.5 : 0.05)
+
+        // Background level: follows quiet moments quickly and loud ones very slowly.
+        noiseFloor = rms < noiseFloor ? rms : noiseFloor + (rms - noiseFloor) * 0.002
+        if rms > max(noiseFloor, 0.001) * Self.speechRatio {
+            let desired = Self.desiredGain(forLevel: rms)
+            // Turn down quickly when speech gets loud, up gently for quieter voices.
+            gain += (desired - gain) * (desired < gain ? 0.5 : 0.1)
+        }
 
         guard gain > 1.01 else { return }
         for channel in 0..<Int(buffer.format.channelCount) {
             let samples = channels[channel]
             for i in 0..<count {
-                samples[i] = tanhf(samples[i] * gain)
+                samples[i] = Self.limit(samples[i] * gain)
             }
         }
     }

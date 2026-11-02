@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import ClearNotes
 
@@ -35,6 +36,47 @@ final class RecorderLogicTests: XCTestCase {
     func testNormalAndLoudSpeechIsLeftAlone() {
         XCTAssertEqual(AutomaticGain.desiredGain(forLevel: 0.1), 1)
         XCTAssertEqual(AutomaticGain.desiredGain(forLevel: 0.6), 1)
+    }
+
+    func testLimiterOnlyTouchesPeaks() {
+        XCTAssertEqual(AutomaticGain.limit(0.5), 0.5)
+        XCTAssertEqual(AutomaticGain.limit(-0.7), -0.7)
+        let limited = AutomaticGain.limit(1.6)
+        XCTAssertGreaterThan(limited, 0.8)
+        XCTAssertLessThan(limited, 1)
+        XCTAssertEqual(AutomaticGain.limit(-1.6), -limited)
+    }
+
+    /// A 16 kHz mono buffer holding a square wave whose RMS level is `level`.
+    private func buffer(level: Float) throws -> AVAudioPCMBuffer {
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1600))
+        buffer.frameLength = 1600
+        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+        for i in 0..<1600 {
+            samples[i] = i % 2 == 0 ? level : -level
+        }
+        return buffer
+    }
+
+    func testPausesDoNotRaiseTheGain() throws {
+        let gain = AutomaticGain()
+        for _ in 0..<50 {
+            gain.apply(to: try buffer(level: 0.002))
+        }
+        XCTAssertEqual(gain.gain, 1, accuracy: 0.001)
+    }
+
+    func testQuietSpeechRaisesTheGain() throws {
+        let gain = AutomaticGain()
+        for _ in 0..<10 {
+            gain.apply(to: try buffer(level: 0.002))
+        }
+        for _ in 0..<50 {
+            gain.apply(to: try buffer(level: 0.03))
+        }
+        XCTAssertGreaterThan(gain.gain, 2.5)
+        XCTAssertLessThanOrEqual(gain.gain, AutomaticGain.maximumGain)
     }
 }
 

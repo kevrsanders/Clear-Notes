@@ -21,6 +21,7 @@ struct MeetingDetailView: View {
     @State private var followUp: FollowUpKind?
     @State private var playback = AudioPlayback()
     @State private var confirmDeleteAudio = false
+    @State private var choosingSpeakerCount = false
 
     /// The transcript line being played, for highlighting.
     private var playingSegment: UUID? {
@@ -94,6 +95,15 @@ struct MeetingDetailView: View {
             }
         }
         .onDisappear { playback.stop() }
+        .confirmationDialog("How many people spoke?", isPresented: $choosingSpeakerCount, titleVisibility: .visible) {
+            ForEach(2...8, id: \.self) { count in
+                Button("\(count) people") {
+                    Task { await MeetingProcessor.reidentifySpeakers(in: meeting, count: count) }
+                }
+            }
+        } message: {
+            Text("Clear Notes listens to the recording again and regroups the voices. Speaker names will need adding again.")
+        }
         .confirmationDialog("Delete the recording?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
             Button("Delete recording", role: .destructive) {
                 playback.unload()
@@ -246,12 +256,28 @@ struct MeetingDetailView: View {
                 if !talkShares.isEmpty {
                     talkTimeBar
                 }
+                if meeting.playableAudioURL != nil && SpeakerSeparators.isSupported {
+                    Button {
+                        choosingSpeakerCount = true
+                    } label: {
+                        Label("Wrong number of speakers?", systemImage: "person.2.badge.gearshape")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.brand)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .cardStyle(padding: 16)
         } else if let note = meeting.speakerNote {
-            Label(note, systemImage: "person.2.slash")
-                .font(.footnote)
-                .foregroundStyle(Theme.textSecondary)
+            VStack(alignment: .leading, spacing: 8) {
+                Label(note, systemImage: "person.2.slash")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                if meeting.playableAudioURL != nil && SpeakerSeparators.isSupported {
+                    Button("Identify speakers") { choosingSpeakerCount = true }
+                        .buttonStyle(SecondaryButtonStyle(compact: true))
+                }
+            }
         }
 
         if meeting.notesNeedRefresh {

@@ -12,6 +12,7 @@ struct RecordingView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(SettingsKeys.requireOnDevice) private var requireOnDevice = true
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
+    @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
     @State private var recorder = MeetingRecorder()
     @State private var notes = ""
     @State private var pane: Pane = .transcript
@@ -276,7 +277,8 @@ struct RecordingView: View {
         do {
             try await recorder.start(
                 requireOnDevice: requireOnDevice,
-                captureAudioForSpeakers: (identifySpeakers && SpeakerSeparators.isSupported) || AudioRetention.current.keepsAudio
+                captureAudioForSpeakers: (identifySpeakers && SpeakerSeparators.isSupported) || AudioRetention.current.keepsAudio,
+                reduceEchoAndNoise: reduceEchoAndNoise
             )
         } catch {
             errorMessage = error.localizedDescription
