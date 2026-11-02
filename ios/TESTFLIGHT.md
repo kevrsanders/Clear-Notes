@@ -44,6 +44,8 @@ Also find your **Team ID**: [developer.apple.com/account](https://developer.appl
 ### 5. Add the secrets to GitHub
 On GitHub: the repository → **Settings** → **Secrets and variables** → **Actions**.
 
+> Use the **Actions** page. The **Agents**, **Codespaces** and **Dependabot** pages under the same menu look identical, but workflows can't read what's stored there.
+
 On the **Secrets** tab → **New repository secret**, add four:
 
 | Name | Value |
@@ -79,7 +81,7 @@ The app declares that it uses no non-exempt encryption (`ITSAppUsesNonExemptEncr
 
 | Problem | What to do |
 |---|---|
-| "Missing: …" in the **Check TestFlight settings** step | A secret or the variable from step 5 is missing or misspelled. Names must match exactly |
+| "Missing: …" in the **Check TestFlight settings** step | A secret or the variable from step 5 is missing, misspelled, or saved under **Agents** (or Codespaces/Dependabot) instead of **Actions** |
 | "The job was not acquired by Runner…" or long queues | GitHub is short of Apple-silicon Macs. Re-run the failed job later, or add a repository variable `MACOS_RUNNER` set to `macos-26-intel` to use Intel Macs (slower, same Xcode) |
 | "No profiles for '…' were found" / signing errors | Check the API key has **Admin** access, and that the bundle ID variable exactly matches step 2 |
 | "No suitable application records were found" | The app wasn't created in App Store Connect (step 3), or it uses a different bundle ID |
