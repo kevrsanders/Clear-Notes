@@ -4,7 +4,10 @@ import XCTest
 
 @MainActor
 final class SpeakerEditingTests: XCTestCase {
-    private func makeMeeting() throws -> (ModelContainer, Meeting) {
+    /// Held for the whole test. SwiftData models stop saving changes once their container is released.
+    private var container: ModelContainer?
+
+    private func makeMeeting() throws -> Meeting {
         let container = try ModelContainer(
             for: Meeting.self, ActionItem.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
@@ -13,13 +16,14 @@ final class SpeakerEditingTests: XCTestCase {
             TranscriptSegment(start: 0, end: 2, text: "Can you tell Sam?", speakerID: "S1"),
             TranscriptSegment(start: 2, end: 4, text: "I haven't got football.", speakerID: "S1"),
         ])
+        self.container = container
         container.mainContext.insert(meeting)
         meeting.speakers = [Speaker(id: "S1", number: 1), Speaker(id: "S2", number: 2)]
-        return (container, meeting)
+        return meeting
     }
 
     func testNewSpeakerTakesTheNextNumberAndTheLine() throws {
-        let (_, meeting) = try makeMeeting()
+        let meeting = try makeMeeting()
         let before = meeting.revision
 
         let speaker = meeting.addSpeaker()
@@ -32,7 +36,7 @@ final class SpeakerEditingTests: XCTestCase {
     }
 
     func testMergingMovesLinesAndRemovesTheSpeaker() throws {
-        let (_, meeting) = try makeMeeting()
+        let meeting = try makeMeeting()
         meeting.reassignSegment(meeting.segments[1].id, to: "S2")
         meeting.mergeSpeaker("S2", into: "S1")
 

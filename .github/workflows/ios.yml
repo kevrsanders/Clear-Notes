@@ -83,6 +83,10 @@ jobs:
           s = json.load(open(sys.argv[1]))
           print(f"**Tests:** {s.get('passedTests', 0)} passed, {s.get('failedTests', 0)} failed, "
                 f"{s.get('skippedTests', 0)} skipped (of {s.get('totalTestCount', 0)}) — {s.get('result', 'unknown')}")
+          # -quiet also hides why a test failed, so list each failure with its message.
+          for failure in s.get('testFailures', []):
+              text = " ".join(str(failure.get('failureText', '')).split())
+              print(f"- `{failure.get('testIdentifierString') or failure.get('testName', '?')}`: {text}")
           PY
 
   testflight:
