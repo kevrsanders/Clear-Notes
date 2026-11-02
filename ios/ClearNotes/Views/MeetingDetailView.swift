@@ -737,13 +737,13 @@ private struct TopicRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            Text("\(topic.start.clockString)–\(topic.end.clockString)")
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(Theme.brand)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Theme.brand.opacity(0.12), in: Capsule())
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("\(topic.start.clockString)–\(topic.end.clockString)")
-                    .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(Theme.brand)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Theme.brand.opacity(0.12), in: Capsule())
                 Text(topic.title)
                     .font(.headline)
                     .foregroundStyle(.primary)

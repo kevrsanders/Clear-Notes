@@ -4,7 +4,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Inter,sans-serif;-webkit-font-smoothing:antialiased;background:#E4E5EC}
 body.dk{background:#1b1c22}
-.row{display:flex;gap:40px;padding:40px;width:max-content}
+.row{display:flex;flex-wrap:wrap;gap:40px;padding:40px;width:2638px}
 
 .theme-light{--bg:#F6F6FA;--surface:#FFFFFF;--raised:#FFFFFF;--stroke:rgba(15,15,30,.06);--t1:#0E0E14;--t2:#6B6B78;--t3:#A3A3AF;--brand:#6A5CFF;--success:#22C55E;--warning:#F59E0B;
  --g1:rgba(139,123,255,.28);--g2:rgba(90,184,255,.22);--g3:rgba(255,179,138,.20);--shadow:0 8px 24px rgba(30,30,60,.06);
@@ -90,6 +90,24 @@ body.dk{background:#1b1c22}
 .owner{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px 0 3px;border-radius:999px;background:var(--fill);font-size:13px;font-weight:500;color:var(--t1)}
 .aibadge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-radius:999px;color:#fff;font-size:11px;font-weight:700;letter-spacing:.4px}
 .skel{height:12px;border-radius:6px;background:var(--fill)}
+.doc{padding:22px}
+.doc h3{font-size:20px;font-weight:700;letter-spacing:-.2px}
+.doc .ch{margin-bottom:14px}
+.hair{height:1px;background:var(--stroke);margin:20px 0}
+.theme-light .hair{background:rgba(15,15,30,.08)}
+.topic{margin-top:18px}
+.topic:first-of-type{margin-top:0}
+.tchip{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.2px;color:var(--brand);background:color-mix(in srgb,var(--brand) 12%,transparent)}
+.tbl{display:flex;gap:10px;font-size:15px;line-height:20px;color:var(--t2);margin-top:6px}
+.tbl .dot{width:5px;height:5px;margin-top:8px;background:var(--t3)}
+.talk{display:flex;gap:2px;height:8px;margin-top:16px}
+.talk i{display:block;height:8px}
+.talk i:first-child{border-radius:4px 0 0 4px}
+.talk i:last-child{border-radius:0 4px 4px 0}
+.fu{display:flex;align-items:center;gap:14px;padding:14px 0}
+.fu+.fu{border-top:1px solid var(--stroke)}
+.theme-light .fu+.fu{border-top-color:rgba(15,15,30,.08)}
+.fuic{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--tint);background:color-mix(in srgb,var(--tint) 14%,transparent);flex:none}
 </style></head><body>
 <div class="row" id="root"></div>
 <script>
@@ -122,6 +140,10 @@ pause:'<rect x="6.5" y="5" width="3.6" height="14" rx="1.2" fill="currentColor" 
 stop:'<rect x="6" y="6" width="12" height="12" rx="3" fill="currentColor" stroke="none"/>',
 person2:'<circle cx="12" cy="8" r="4" fill="currentColor" stroke="none"/><path d="M4 20.5a8 8 0 0 1 16 0z" fill="currentColor" stroke="none"/>',
 filter:'<path d="M4 6h16M7 12h10M10 18h4"/>',
+mail:'<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/>',
+topics:'<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.3" fill="currentColor" stroke="none"/>',
+refresh:'<path d="M20 11.5A8 8 0 1 0 17.7 17"/><path d="M20 5v6.5h-6.5"/>',
+copy:'<rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 8.5V6A2.5 2.5 0 0 0 13 3.5H6A2.5 2.5 0 0 0 3.5 6v7A2.5 2.5 0 0 0 6 15.5h2.5"/>',
 };
 const ic=(n,s=20,w=1.9)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" style="flex:none">${P[n]}</svg>`;
 
@@ -210,28 +232,58 @@ function detailHeader(eyebrow,title,chips){return `<div class="eyebrow">${eyebro
 <div class="title" style="margin-top:6px">${title}</div>
 <div class="chips" style="margin-top:12px">${chips}</div>`}
 
-const speakerStrip=`<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px"><span class="eyebrow">Speakers</span><span class="foot" style="color:var(--t3)">Tap to rename</span></div>
-<div style="display:flex;gap:18px">
- ${['P','T','S'].map(k=>`<div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:62px">${av(k,44)}<span style="font-size:13px;font-weight:500">${SP[k].n}</span></div>`).join('')}
- <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:72px">${av('U',44)}<span style="font-size:13px;font-weight:500;color:var(--t2);margin-top:2px">Speaker 4</span><span style="font-size:12px;font-weight:600;color:var(--brand);margin-top:-3px">Tap to name</span></div>
+const TALK=[['P',42],['T',31],['S',19],['U',8]];
+const speakerStrip=`<div class="card" style="margin-top:20px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span class="eyebrow">Speakers</span><span class="foot" style="color:var(--t3)">Tap to rename</span></div>
+<div style="display:flex;gap:14px">
+ ${TALK.map(([k,pct])=>{const sp=SP[k];return `<div style="display:flex;flex-direction:column;align-items:center;width:${sp.num?74:60}px">${av(k,44)}<span style="font-size:13px;font-weight:500;margin-top:6px;${sp.num?'color:var(--t2)':''}">${sp.n}</span><span style="font-size:12px;color:var(--t2);font-variant-numeric:tabular-nums;margin-top:1px">${pct}%</span>${sp.num?`<span style="font-size:12px;font-weight:600;color:var(--brand);margin-top:1px">Tap to name</span>`:''}</div>`}).join('')}
+</div>
+<div class="talk">${TALK.map(([k,pct])=>`<i style="flex:${pct};background:${SP[k].c}"></i>`).join('')}</div>
+<div class="foot" style="margin-top:8px">Talk time · 34 min</div>
 </div>`;
 
 /* ---------- 3. Overview ---------- */
-function overview(){return `${glow}${statusBar}${navDetail('')}<div class="content" style="top:110px">
+const TOPICS=[
+ ['0:00–6:40','Content audit progress',['Audit is 80% complete across the site.','Service pages are the main gap.']],
+ ['6:40–14:05','Launch timing',['Launch moves to March so testing isn’t rushed.']],
+ ['14:05–22:30','Hosting contract',['Renewal date to be checked before December.']],
+];
+const FOLLOWUPS=[
+ ['listc','var(--brand)','List actions','Owners and due dates, ready to paste'],
+ ['mail','#14B8A6','Write follow-up email','A thank-you with decisions and next steps'],
+ ['note','#FB923C','Draft project plan','Goals, workstreams and timeline'],
+];
+function overviewColumn(){return `
 ${detailHeader('Friday 30 October · 10:02','Website relaunch weekly check-in',chip('34 min','clock')+chip('4 speakers','users')+chip('On-device','lock','var(--brand)'))}
 ${speakerStrip}
 <div style="margin-top:14px;border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--brand) 9%,transparent);color:var(--brand);font-size:15px;font-weight:500">${ic('sparkle',18)}<span style="flex:1">Name Speaker 4 to improve notes</span>${ic('chev',16,2.4)}</div>
 <div style="margin-top:16px">${pills(['Overview',['Actions',2],'Transcript','Notes'],0)}</div>
-<div class="card" style="margin-top:16px">
+<div class="card doc" style="margin-top:16px">
  <div class="ch"><div class="gi grad">${ic('sparkle',16)}</div><h3>Summary</h3></div>
  ${['Content audit is 80% complete; service pages are the main gap.','Launch moved to March to allow time for testing.','New feature requests paused until go-live.','Hosting contract renewal needs checking before December.'].map(t=>`<div class="bl"><span class="dot"></span><span>${t}</span></div>`).join('')}
+ <div class="hair"></div>
+ <div class="ch" data-anchor="topics"><div class="gi grad">${ic('topics',16,2.2)}</div><h3>Topics</h3></div>
+ ${TOPICS.map(([t,title,pts])=>`<div class="topic"><span class="tchip">${t}</span><div class="headline" style="margin-top:6px">${title}</div>${pts.map(x=>`<div class="tbl"><span class="dot"></span><span>${x}</span></div>`).join('')}</div>`).join('')}
+ <div class="hair"></div>
+ <div class="ch" data-anchor="decisions"><div class="ti" style="--tint:var(--success)">${ic('decide',16,2.2)}</div><h3>Decisions</h3></div>
+ <div class="bl"><span class="num" style="color:#fff;background:var(--success)">1</span><span>Move the launch to March.</span></div>
+ <div class="bl"><span class="num" style="color:#fff;background:var(--success)">2</span><span>Pause new feature requests until go-live.</span></div>
 </div>
-<div class="card" style="margin-top:16px">
- <div class="ch"><div class="ti" style="--tint:#22C55E">${ic('decide',16,2.2)}</div><h3>Decisions</h3></div>
- <div class="bl"><span class="num">1</span><span>Move the launch to March.</span></div>
- <div class="bl"><span class="num">2</span><span>Pause new feature requests until go-live.</span></div>
+<div class="eyebrow" style="margin:22px 4px 10px" data-anchor="followups">Follow-ups</div>
+<div class="card" style="padding:4px 16px">
+ ${FOLLOWUPS.map(([icn,tint,title,sub])=>`<div class="fu"><div class="fuic" style="--tint:${tint}">${ic(icn,20,2)}</div><div style="flex:1;min-width:0"><div class="headline">${title}</div><div class="foot" style="margin-top:1px">${sub}</div></div><span style="color:var(--t3)">${ic('chev',16,2.4)}</span></div>`).join('')}
 </div>
-</div>${tabbar(0)}${homeInd}`}
+<div class="card" style="margin-top:16px;display:flex;align-items:center;gap:12px">
+ <div class="gi grad" style="width:36px;height:36px;border-radius:11px">${ic('listc',18,2.2)}</div>
+ <div style="flex:1"><div class="headline">2 actions to review</div><div class="foot">Accept the ones that are right</div></div>
+ <span style="color:var(--t3)">${ic('chev',16,2.4)}</span></div>
+<div class="foot" style="display:flex;gap:6px;align-items:center;margin:14px 4px 0">${ic('sparkle',14)}Written by Apple Intelligence (on this iPhone). Check before sharing.</div>
+<div style="height:140px"></div>`}
+function overview(){return `${glow}${statusBar}${navDetail('')}<div class="content" style="top:110px;bottom:28px;overflow:hidden">${overviewColumn()}</div>${tabbar(0)}${homeInd}`}
+/* Scrolled states: the column is shifted so an anchor lands at a target y (set after render). */
+function overviewScrolled(anchor,y){return ()=>`${stickyHeader(0)}<div class="content" style="top:${CLIP}px;bottom:28px;overflow:hidden;padding:0"><div class="col" data-scroll="${anchor}" data-y="${y-CLIP}" style="position:absolute;left:20px;right:20px">${overviewColumn()}</div></div>${tabbar(0)}${homeInd}`}
+/* Content scrolls under the pinned tabs and is clipped just below the status bar area. */
+const CLIP=152;
 
 /* ---------- 4. Transcript ---------- */
 const turns=[
@@ -271,6 +323,35 @@ function naming(){return `${transcript()}<div style="position:absolute;inset:0;b
  <div class="eyebrow" style="margin:18px 0 8px">Same person as</div>
  <div style="display:flex;gap:8px">${['P','T','S'].map(k=>`<div style="display:flex;align-items:center;gap:8px;height:40px;padding:0 14px 0 4px;border-radius:999px;border:1px solid var(--stroke);background:var(--surface)">${av(k,32)}<span style="font-size:15px;font-weight:500">${SP[k].n}</span></div>`).join('')}</div>
 </div>`}
+
+/* ---------- 9. Follow-up sheet ---------- */
+function followUp(){return `${overviewScrolled('followups',190)()}<div style="position:absolute;inset:0;background:rgba(0,0,0,.38);z-index:80"></div>
+<div style="position:absolute;left:0;right:0;top:58px;bottom:0;border-radius:38px 38px 0 0;background:var(--bg);z-index:90;box-shadow:0 -10px 40px rgba(0,0,0,.2);border:1px solid var(--stroke);overflow:hidden">
+ ${glow}
+ <div style="position:relative;padding:0 20px">
+ <div style="width:36px;height:5px;border-radius:3px;background:var(--t3);opacity:.6;margin:8px auto 0"></div>
+ <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
+  <div class="fuic" style="--tint:#14B8A6">${ic('mail',20,2)}</div>
+  <div style="flex:1;font-size:20px;font-weight:700;letter-spacing:-.2px">Follow-up email</div>
+  <div class="gcirc glass" style="width:36px;height:36px;color:var(--t2)">${ic('x',14,2.6)}</div></div>
+ <div class="foot" style="display:flex;align-items:center;gap:6px;margin-top:12px;color:var(--brand)">${ic('sparkle',14)}Written on this iPhone by Apple Intelligence</div>
+ <div class="card" style="margin-top:14px;padding:18px;font-size:16px;line-height:22px">
+  <div style="font-weight:600">Subject: Website relaunch – decisions and next steps</div>
+  <div class="hair" style="margin:14px 0"></div>
+  <div>Hi all,</div>
+  <div style="margin-top:12px">Thanks for your time at today’s weekly check-in. Here’s a quick recap:</div>
+  ${['We agreed to move the launch to March so testing isn’t rushed.','<b>Priya</b> will send the revised page list <b>by Friday</b>.','<b>Tom</b> will update the risk log with the March launch date.'].map(t=>`<div class="bl" style="font-size:16px;line-height:22px;margin-top:10px"><span class="dot" style="margin-top:8px"></span><span>${t}</span></div>`).join('')}
+  <div style="margin-top:12px">We still need to confirm when the hosting contract renews – let me know if you can pick that up.</div>
+  <div style="margin-top:12px">Best wishes</div>
+ </div>
+ </div>
+ <div style="position:absolute;left:0;right:0;bottom:0;height:150px;background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--bg) 94%,transparent) 45%)"></div>
+ <div class="glass" style="position:absolute;left:20px;right:20px;bottom:34px;height:64px;border-radius:999px;display:flex;align-items:center;gap:10px;padding:0 8px">
+  <div class="gcirc" style="width:48px;height:48px;background:var(--fill)">${ic('refresh',20,2.2)}</div>
+  <div class="btnS" style="flex:1;height:48px;justify-content:center;font-size:16px">${ic('copy',18,2)}Copy</div>
+  <div class="btnP grad" style="flex:1.3;height:48px;justify-content:center;font-size:16px">${ic('share',18,2.2)}Share</div>
+ </div>
+</div>${homeInd}`}
 
 /* ---------- 6. Actions (detail) ---------- */
 function actionCard(o){return `<div class="card"><div class="acard">
@@ -331,6 +412,11 @@ ${detailHeader('Thursday 30 October · 14:30','1:1 with Sam',chip('22 min','cloc
 
 const theme=location.hash==='#dark'?'dark':'light';
 if(theme==='dark')document.body.classList.add('dk');
-const screens=[home,recording,overview,transcript,naming,actionsDetail,actionsTab,processing];
+const screens=[home,recording,overview,overviewScrolled('topics',196),overviewScrolled('followups',220),transcript,naming,actionsDetail,actionsTab,processing,followUp];
 document.getElementById('root').innerHTML=screens.map((f,i)=>`<div class="phone theme-${i==1?'dark':theme}" id="s${i+1}">${f()}</div>`).join('');
+document.querySelectorAll('.col[data-scroll]').forEach(col=>{
+  const a=col.querySelector(`[data-anchor="${col.dataset.scroll}"]`);
+  const top=a.getBoundingClientRect().top-col.getBoundingClientRect().top;
+  col.style.top=(Number(col.dataset.y)-top)+'px';
+});
 </script></body></html>
