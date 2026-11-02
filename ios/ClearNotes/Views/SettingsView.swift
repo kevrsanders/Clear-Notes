@@ -1,4 +1,5 @@
 import Speech
+import SwiftData
 import SwiftUI
 
 enum SettingsKeys {
@@ -9,6 +10,7 @@ enum SettingsKeys {
     static let myName = "myName"
     static let audioRetention = "audioRetentionDays"
     static let reduceEchoAndNoise = "reduceEchoAndNoise"
+    static let rememberVoices = "rememberVoices"
 }
 
 struct SettingsView: View {
@@ -19,6 +21,8 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.myName) private var myName = ""
     @AppStorage(SettingsKeys.audioRetention) private var audioRetention = AudioRetention.default.rawValue
     @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
+    @AppStorage(SettingsKeys.rememberVoices) private var rememberVoices = false
+    @Query private var voices: [VoiceProfile]
     @State private var isDownloading = false
     @State private var downloadError: String?
 
@@ -74,11 +78,26 @@ struct SettingsView: View {
                         .tint(Theme.brand)
                     }
 
-                    section("Speakers", footer: "Voices are separated on this iPhone after each meeting. The speaker models are downloaded once. No meeting data is sent.") {
+                    section("Speakers", footer: "Voices are separated on this iPhone after each meeting. The speaker models are downloaded once. No meeting data is sent. Remember voices (off by default) saves a voiceprint when you name someone, only with their agreement, so later meetings can suggest their name. Voiceprints are biometric data: check with your Information Governance team before using this with colleagues.") {
                         toggle("Identify speakers", systemImage: "person.2.wave.2", isOn: $identifySpeakers)
                             .disabled(!SpeakerSeparators.isSupported)
                         Divider()
                         modelsRow
+                        Divider()
+                        toggle("Remember voices", systemImage: "person.wave.2.fill", isOn: $rememberVoices)
+                            .disabled(!SpeakerSeparators.isSupported)
+                        if rememberVoices || !voices.isEmpty {
+                            NavigationLink {
+                                VoicesView()
+                            } label: {
+                                HStack {
+                                    Text("Remembered voices")
+                                    Spacer()
+                                    Text("\(voices.count)")
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
+                            }
+                        }
                     }
 
                     section("This iPhone") {

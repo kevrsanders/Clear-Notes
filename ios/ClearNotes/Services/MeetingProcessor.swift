@@ -72,7 +72,8 @@ enum MeetingProcessor {
             UserDefaults.standard.set(true, forKey: SettingsKeys.speakerModelsReady)
             let assigned = SpeakerAssigner.assign(meeting.segments, turns: turns)
             meeting.segments = assigned.segments
-            meeting.speakers = assigned.speakers
+            meeting.speakers = voiceprintsAllowed(assigned.speakers)
+            VoiceLibrary.applyMatches(to: meeting)
             meeting.speakerNote = assigned.speakers.isEmpty ? "No separate voices were found." : nil
         } catch {
             meeting.speakerNote = "Speakers couldn't be identified. \(error.localizedDescription)"
@@ -105,7 +106,8 @@ enum MeetingProcessor {
             }
             let assigned = SpeakerAssigner.assign(unassigned, turns: turns)
             meeting.segments = assigned.segments
-            meeting.speakers = assigned.speakers
+            meeting.speakers = voiceprintsAllowed(assigned.speakers)
+            VoiceLibrary.applyMatches(to: meeting)
             meeting.speakerNote = nil
             meeting.notesNeedRefresh = previousState == .ready
         } catch {
@@ -113,6 +115,16 @@ enum MeetingProcessor {
         }
         meeting.processingStage = nil
         meeting.processingState = previousState
+    }
+
+    /// Voiceprints are kept on a meeting only while Remember voices is on.
+    private static func voiceprintsAllowed(_ speakers: [Speaker]) -> [Speaker] {
+        guard !VoiceLibrary.isEnabled else { return speakers }
+        return speakers.map { speaker in
+            var speaker = speaker
+            speaker.embedding = nil
+            return speaker
+        }
     }
 
     static func apply(_ insights: MeetingInsights, to meeting: Meeting) {

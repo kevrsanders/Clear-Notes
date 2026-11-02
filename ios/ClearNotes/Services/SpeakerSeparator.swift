@@ -9,6 +9,8 @@ struct SpeakerTurn: Equatable, Sendable {
     var speaker: String
     var start: TimeInterval
     var end: TimeInterval
+    /// The voiceprint for this stretch, if the separator provides one.
+    var embedding: [Float] = []
 }
 
 enum SpeakerSeparationError: LocalizedError {
@@ -79,7 +81,8 @@ struct FluidSpeakerSeparator: SpeakerSeparating {
             SpeakerTurn(
                 speaker: $0.speakerId,
                 start: TimeInterval($0.startTimeSeconds),
-                end: TimeInterval($0.endTimeSeconds)
+                end: TimeInterval($0.endTimeSeconds),
+                embedding: $0.embedding
             )
         }
     }

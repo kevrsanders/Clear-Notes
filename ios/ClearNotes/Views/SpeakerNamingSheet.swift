@@ -10,6 +10,10 @@ struct SpeakerNamingSheet: View {
     var onPlay: ((TimeInterval, TimeInterval?) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @AppStorage(SettingsKeys.rememberVoices) private var rememberVoices = false
+    @State private var rememberThisVoice = false
+    @State private var suggestionRejected = false
     @Query private var allMeetings: [Meeting]
     @AppStorage(SettingsKeys.myName) private var myName = ""
     @State private var name = ""
@@ -70,6 +74,10 @@ struct SpeakerNamingSheet: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
 
+                if let suggested = speaker.suggestedName, !suggestionRejected {
+                    suggestionCard(suggested)
+                }
+
                 if !quotes.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         Eyebrow("They said")
@@ -103,6 +111,19 @@ struct SpeakerNamingSheet: View {
                             .cardStyle(padding: 14)
                         }
                     }
+                }
+
+                if rememberVoices && speaker.embedding != nil {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(isOn: $rememberThisVoice) {
+                            Label("Remember this voice", systemImage: "person.wave.2.fill")
+                        }
+                        .tint(Theme.brand)
+                        Text("Only with their agreement. Their voiceprint stays on this iPhone and is used to suggest their name in later meetings.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .cardStyle(padding: 14)
                 }
 
                 HStack(spacing: 10) {
@@ -172,7 +193,40 @@ struct SpeakerNamingSheet: View {
 
     private func save(_ newName: String?) {
         meeting.renameSpeaker(speaker.id, to: newName)
+        if rememberThisVoice, let newName, let embedding = speaker.embedding {
+            VoiceLibrary.remember(name: newName, embedding: embedding, in: context)
+        }
         dismiss()
+    }
+
+    /// "Sounds like Priya": confirming names the speaker and strengthens the remembered voice.
+    private func suggestionCard(_ suggested: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                IconTile(systemName: "person.wave.2.fill", tint: nil, size: 32)
+                Text("Sounds like **\(suggested)**")
+                    .font(.headline)
+            }
+            HStack(spacing: 8) {
+                Button {
+                    meeting.confirmSuggestion(for: speaker.id)
+                    if let embedding = speaker.embedding {
+                        VoiceLibrary.remember(name: suggested, embedding: embedding, in: context)
+                    }
+                    dismiss()
+                } label: {
+                    Label("Yes, it's \(suggested)", systemImage: "checkmark")
+                }
+                .buttonStyle(PrimaryButtonStyle(compact: true))
+
+                Button("Not them") {
+                    meeting.rejectSuggestion(for: speaker.id)
+                    suggestionRejected = true
+                }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+            }
+        }
+        .cardStyle(padding: 16)
     }
 }
 

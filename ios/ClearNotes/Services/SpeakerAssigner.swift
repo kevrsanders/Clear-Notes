@@ -35,11 +35,32 @@ enum SpeakerAssigner {
         }
 
         let used = Set(result.compactMap(\.speakerID))
-        let speakers = idForLabel.values
-            .filter { used.contains($0) }
-            .compactMap { id in Int(id.dropFirst()).map { Speaker(id: id, number: $0) } }
+        let voiceprints = centroids(sortedTurns)
+        let speakers = idForLabel
+            .filter { used.contains($0.value) }
+            .compactMap { label, id in
+                Int(id.dropFirst()).map { number in
+                    let voiceprint = voiceprints[label] ?? []
+                    return Speaker(id: id, number: number, embedding: voiceprint.isEmpty ? nil : voiceprint)
+                }
+            }
             .sorted { $0.number < $1.number }
         return (result, speakers)
+    }
+
+    /// One voiceprint per separator label: the duration-weighted average of its turns, normalised.
+    static func centroids(_ turns: [SpeakerTurn]) -> [String: [Float]] {
+        var sums: [String: [Float]] = [:]
+        for turn in turns where !turn.embedding.isEmpty {
+            let weight = Float(max(turn.end - turn.start, 0.1))
+            if let sum = sums[turn.speaker] {
+                guard sum.count == turn.embedding.count else { continue }
+                sums[turn.speaker] = zip(sum, turn.embedding).map { $0 + $1 * weight }
+            } else {
+                sums[turn.speaker] = turn.embedding.map { $0 * weight }
+            }
+        }
+        return sums.mapValues(VoiceMatcher.normalized)
     }
 
     // MARK: - Helpers

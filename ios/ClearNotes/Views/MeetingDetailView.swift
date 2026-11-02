@@ -241,9 +241,13 @@ struct MeetingDetailView: View {
                                             .foregroundStyle(Theme.textSecondary)
                                     }
                                     if speaker.name == nil {
-                                        Text("Tap to name")
+                                        Text(speaker.suggestedName.map { "\($0)?" } ?? "Tap to name")
                                             .font(.caption2.weight(.semibold))
                                             .foregroundStyle(Theme.brand)
+                                    } else if speaker.matchedProfileID != nil {
+                                        Text("Recognised")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(Theme.textTertiary)
                                     }
                                 }
                                 .frame(minWidth: 56)

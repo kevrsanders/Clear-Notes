@@ -25,6 +25,13 @@ struct Speaker: Codable, Hashable, Identifiable, Sendable {
     /// 1-based, in order of first appearance. Also picks the speaker's colour.
     var number: Int
     var name: String?
+    /// Voiceprint for this meeting, kept only while Remember voices is on.
+    var embedding: [Float]?
+    /// A remembered voice this sounds like, waiting for the user to confirm.
+    var suggestedName: String?
+    var suggestedProfileID: String?
+    /// The remembered voice this speaker was matched to.
+    var matchedProfileID: String?
 
     var displayName: String { name ?? "Speaker \(number)" }
 }
@@ -189,6 +196,46 @@ final class Meeting {
         updated[index].name = trimmed.isEmpty ? nil : trimmed
         speakers = updated
         didEditSpeakers()
+    }
+
+    /// Changes one speaker in place.
+    private func updateSpeaker(_ id: String, _ change: (inout Speaker) -> Void) {
+        var updated = speakers
+        guard let index = updated.firstIndex(where: { $0.id == id }) else { return }
+        change(&updated[index])
+        speakers = updated
+    }
+
+    /// Accepts a "sounds like" suggestion: names the speaker and links the remembered voice.
+    func confirmSuggestion(for id: String) {
+        updateSpeaker(id) { speaker in
+            guard let suggested = speaker.suggestedName else { return }
+            speaker.name = suggested
+            speaker.matchedProfileID = speaker.suggestedProfileID
+            speaker.suggestedName = nil
+            speaker.suggestedProfileID = nil
+        }
+        didEditSpeakers()
+    }
+
+    func rejectSuggestion(for id: String) {
+        updateSpeaker(id) { speaker in
+            speaker.suggestedName = nil
+            speaker.suggestedProfileID = nil
+        }
+        didEditSpeakers()
+    }
+
+    /// Removes voiceprints and voice links, e.g. when the user deletes remembered voices.
+    func forgetVoiceprints() {
+        speakers = speakers.map { speaker in
+            var speaker = speaker
+            speaker.embedding = nil
+            speaker.suggestedName = nil
+            speaker.suggestedProfileID = nil
+            speaker.matchedProfileID = nil
+            return speaker
+        }
     }
 
     /// Adds an unnamed speaker, for splitting out a voice that separation missed.
