@@ -42,8 +42,11 @@ Phase 1 (done) is a private, on-device iPhone app: capture, transcription, speak
 - Useful for governance minutes and project boards.
 
 ### Calendar awareness
-- **On-device first:** iOS **EventKit** reads the calendars already on the phone, including Outlook accounts added to iOS. When you start recording during a calendar event, the meeting is titled automatically and its **attendee list** is used for speaker-naming suggestions and owner matching.
-- Optional Graph **Calendars.Read** for richer attendee details (job titles, email addresses).
+- **On-device first:** iOS **EventKit** reads the calendars in Apple's Calendar app, after the user allows it. When you start recording during an event, the meeting is titled automatically. Where an attendee list is available, it feeds speaker-naming suggestions and owner matching.
+- **Outlook app calendars** are private to the Outlook app. They reach EventKit in one of two ways:
+  - **Outlook → Settings → your account → Sync Calendars.** This copies events to Apple's Calendar app. Expect titles and times, but probably not attendees, because iOS doesn't let apps like Outlook write attendee lists. An Intune app protection policy can block it ("Sync policy managed app data with native apps or add-ins").
+  - **Adding the work account in iOS Settings** gives full events with attendees, but many organisations block the built-in iOS mail and calendar apps through Conditional Access.
+- **Microsoft Graph** `Calendars.Read`, after Microsoft sign-in, is the dependable route for work calendars. It gives full attendee details and the Teams join link that transcript import needs, and it works whatever the Outlook settings are.
 
 ---
 
