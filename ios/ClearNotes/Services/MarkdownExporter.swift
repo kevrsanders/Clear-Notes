@@ -14,6 +14,9 @@ enum MarkdownExporter {
         if !named.isEmpty {
             lines += ["**Speakers:** \(named.joined(separator: ", "))", ""]
         }
+        if !meeting.attendees.isEmpty {
+            lines += ["**Invited:** \(meeting.attendees.joined(separator: ", "))", ""]
+        }
         if !meeting.summary.isEmpty {
             lines += ["## Summary", "", meeting.summary, ""]
         }

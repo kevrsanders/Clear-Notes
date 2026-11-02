@@ -159,7 +159,16 @@ struct MeetingDetailView: View {
                 if !meeting.speakers.isEmpty {
                     Chip(text: "\(meeting.speakers.count) speaker\(meeting.speakers.count == 1 ? "" : "s")", systemImage: "person.2.fill")
                 }
+                if meeting.teamsJoinURL != nil {
+                    Chip(text: "Teams meeting", systemImage: "video.fill")
+                }
                 Chip(text: "On-device", systemImage: "lock.fill", tint: Theme.brand)
+            }
+            if !meeting.attendees.isEmpty {
+                Text("Invited: " + meeting.attendees.joined(separator: ", "))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(2)
             }
         }
         .padding(.top, 4)

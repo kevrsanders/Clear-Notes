@@ -1,6 +1,7 @@
 import Speech
 import SwiftData
 import SwiftUI
+import UIKit
 
 enum SettingsKeys {
     static let showConsentReminder = "showConsentReminder"
@@ -11,6 +12,7 @@ enum SettingsKeys {
     static let audioRetention = "audioRetentionDays"
     static let reduceEchoAndNoise = "reduceEchoAndNoise"
     static let rememberVoices = "rememberVoices"
+    static let useCalendar = "useCalendar"
 }
 
 struct SettingsView: View {
@@ -22,6 +24,8 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.audioRetention) private var audioRetention = AudioRetention.default.rawValue
     @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
     @AppStorage(SettingsKeys.rememberVoices) private var rememberVoices = false
+    @AppStorage(SettingsKeys.useCalendar) private var useCalendar = false
+    @State private var calendarBlocked = CalendarReader.isBlocked
     @Query private var voices: [VoiceProfile]
     @State private var isDownloading = false
     @State private var downloadError: String?
@@ -56,6 +60,31 @@ struct SettingsView: View {
                         toggle("Transcribe on this iPhone only", systemImage: "lock.iphone", isOn: $requireOnDevice)
                         Divider()
                         toggle("Remind me to tell attendees", systemImage: "person.wave.2", isOn: $showConsentReminder)
+                    }
+
+                    section("Calendar", footer: "Reads today's events from the calendars in Apple's Calendar app, including a work account added in iOS Settings. Recordings take the meeting's title, invited people are suggested when naming speakers and action owners, and the Teams link is kept for later. Only the title, invited names and Teams link are saved with each meeting. Nothing is sent anywhere.") {
+                        Toggle(isOn: calendarToggle) {
+                            Label {
+                                Text("Use my calendar")
+                            } icon: {
+                                Image(systemName: "calendar")
+                                    .foregroundStyle(Theme.brand)
+                            }
+                        }
+                        .tint(Theme.brand)
+                        if calendarBlocked {
+                            Divider()
+                            HStack(spacing: 12) {
+                                Text("Calendar access is off for Clear Notes. Turn on Full Access in iOS Settings.")
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.warning)
+                                Spacer(minLength: 0)
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    Button("Settings") { UIApplication.shared.open(url) }
+                                        .buttonStyle(SecondaryButtonStyle(compact: true))
+                                }
+                            }
+                        }
                     }
 
                     section("Microphone", footer: "Echo and noise reduction is the processing iPhone uses for speakerphone calls. It cleans up echo and hiss but works best within a metre or two, so it can quieten people further away. Leave it off for meetings round a table. A plugged-in USB conference microphone is used automatically and picks up a room best.") {
@@ -119,7 +148,7 @@ struct SettingsView: View {
                     section("About") {
                         LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "–")
                         Divider()
-                        Text("Phase 1: on-device capture, speakers and notes. Calendar, task-tool integrations and cross-meeting search come in Phase 2.")
+                        Text("Phase 1: on-device capture, speakers, notes and calendar. Microsoft 365 and Teams integrations and cross-meeting search come in Phase 2.")
                             .font(.footnote)
                             .foregroundStyle(Theme.textSecondary)
                     }
@@ -130,6 +159,30 @@ struct SettingsView: View {
             .scrollDismissesKeyboard(.immediately)
             .background { GlowBackground() }
             .toolbar(.hidden, for: .navigationBar)
+            .onAppear {
+                calendarBlocked = CalendarReader.isBlocked
+                // Access may have been removed in iOS Settings since it was turned on.
+                if useCalendar && !CalendarReader.hasAccess && CalendarReader.hasAnswered {
+                    useCalendar = false
+                }
+            }
+        }
+    }
+
+    /// Turning the calendar on asks iOS for access first, and stays off if it isn't given.
+    private var calendarToggle: Binding<Bool> {
+        Binding {
+            useCalendar
+        } set: { isOn in
+            guard isOn else {
+                useCalendar = false
+                return
+            }
+            Task { @MainActor in
+                let granted = await CalendarReader.shared.requestAccess()
+                useCalendar = granted
+                calendarBlocked = !granted
+            }
         }
     }
 

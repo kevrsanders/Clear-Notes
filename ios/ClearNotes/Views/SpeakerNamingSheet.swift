@@ -30,10 +30,11 @@ struct SpeakerNamingSheet: View {
             .sorted { $0.start < $1.start }
     }
 
-    /// "Me", then people from earlier meetings and action owners, skipping names already used here.
+    /// "Me", people invited to this meeting, then people from earlier meetings and action owners,
+    /// skipping names already used here.
     private var suggestions: [String] {
         let me = myName.trimmingCharacters(in: .whitespaces)
-        var candidates = [me.isEmpty ? "Me" : me]
+        var candidates = [me.isEmpty ? "Me" : me] + meeting.attendees
         for other in allMeetings.sorted(by: { $0.createdAt > $1.createdAt }) {
             candidates += other.speakers.compactMap(\.name)
             candidates += other.actions.compactMap(\.owner)

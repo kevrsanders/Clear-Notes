@@ -80,6 +80,10 @@ final class Meeting {
     var notesNeedRefresh: Bool = false
     /// Bumped on every speaker edit. Views read it so changes inside `segments` always redraw.
     var revision: Int = 0
+    /// Names of people invited, from the calendar event the recording was linked to.
+    var attendees: [String] = []
+    /// The Teams join link from the invite, kept for importing the Teams transcript later.
+    var teamsJoinURL: String?
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []
@@ -123,6 +127,15 @@ final class Meeting {
 
     static func defaultTitle(for date: Date) -> String {
         "Meeting · " + date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
+    }
+
+    // MARK: - Calendar
+
+    /// Takes the title, invited people and Teams link from the calendar event this recording was made in.
+    func link(to event: CalendarMeeting) {
+        if !event.title.isEmpty { title = event.title }
+        attendees = event.attendees
+        teamsJoinURL = event.teamsJoinURL?.absoluteString
     }
 
     // MARK: - Recording

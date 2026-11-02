@@ -9,6 +9,8 @@ struct MeetingsListView: View {
     @AppStorage(SettingsKeys.showConsentReminder) private var showConsentReminder = true
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @AppStorage(SettingsKeys.myName) private var myName = ""
+    @AppStorage(SettingsKeys.useCalendar) private var useCalendar = false
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var path: [Meeting] = []
     @State private var search = ""
@@ -16,12 +18,19 @@ struct MeetingsListView: View {
     @State private var startAfterConsent = false
     @State private var showRecorder = false
     @State private var finishedMeeting: Meeting?
+    /// Today's calendar events, when Use my calendar is on.
+    @State private var todaysEvents: [CalendarMeeting] = []
+    /// The event the user tapped Record on. Nil lets the recorder find the meeting happening now.
+    @State private var recordingEvent: CalendarMeeting?
 
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
+                    if search.isEmpty, let upNext {
+                        UpNextCard(event: upNext.event, isNow: upNext.isNow) { newMeeting(for: upNext.event) }
+                    }
                     SearchField(text: $search)
                     if meetings.isEmpty {
                         emptyState
@@ -50,9 +59,19 @@ struct MeetingsListView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Meeting.self) { MeetingDetailView(meeting: $0) }
             .overlay(alignment: .bottom) {
-                RecordButton(action: newMeeting)
+                RecordButton { newMeeting(for: nil) }
                     .padding(.bottom, 12)
             }
+        }
+        .task(id: useCalendar) {
+            // Keeps "Now" and "Next" current while the home screen is open.
+            while !Task.isCancelled {
+                refreshCalendar()
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { refreshCalendar() }
         }
         .sheet(isPresented: $showConsent, onDismiss: {
             if startAfterConsent {
@@ -68,7 +87,7 @@ struct MeetingsListView: View {
             .presentationCornerRadius(32)
         }
         .fullScreenCover(isPresented: $showRecorder, onDismiss: openFinishedMeeting) {
-            RecordingView(onFinish: saveMeeting)
+            RecordingView(calendarMeeting: recordingEvent, onFinish: saveMeeting)
         }
     }
 
@@ -189,9 +208,24 @@ struct MeetingsListView: View {
         ].filter { !$0.meetings.isEmpty }
     }
 
+    // MARK: - Calendar
+
+    /// The meeting happening now, or else the next one today.
+    private var upNext: (event: CalendarMeeting, isNow: Bool)? {
+        if let now = CalendarMeetingPicker.current(in: todaysEvents, at: .now) {
+            return (now, true)
+        }
+        return CalendarMeetingPicker.next(in: todaysEvents, after: .now).map { ($0, false) }
+    }
+
+    private func refreshCalendar() {
+        todaysEvents = useCalendar ? CalendarReader.shared.meetingsToday() : []
+    }
+
     // MARK: - Recording
 
-    private func newMeeting() {
+    private func newMeeting(for event: CalendarMeeting?) {
+        recordingEvent = event
         if showConsentReminder {
             showConsent = true
         } else {
@@ -199,7 +233,7 @@ struct MeetingsListView: View {
         }
     }
 
-    private func saveMeeting(_ result: RecordingResult, notes: String) {
+    private func saveMeeting(_ result: RecordingResult, notes: String, event: CalendarMeeting?) {
         let start = Date().addingTimeInterval(-result.duration)
         let separatesSpeakers = identifySpeakers && SpeakerSeparators.isSupported
         let meeting = Meeting(
@@ -210,6 +244,9 @@ struct MeetingsListView: View {
             segments: result.segments,
             pendingAudioFileName: separatesSpeakers ? result.audioFileName : nil
         )
+        if let event {
+            meeting.link(to: event)
+        }
         if !separatesSpeakers {
             meeting.keepAudio(result.audioFileName)
         }
@@ -222,6 +259,69 @@ struct MeetingsListView: View {
         guard let meeting = finishedMeeting else { return }
         finishedMeeting = nil
         path.append(meeting)
+    }
+}
+
+/// The meeting happening now, or next today, with one tap to record it.
+private struct UpNextCard: View {
+    let event: CalendarMeeting
+    let isNow: Bool
+    var onRecord: () -> Void
+
+    private var people: [Speaker] {
+        event.attendees.enumerated().map { index, name in
+            Speaker(id: "\(index)", number: index + 1, name: name)
+        }
+    }
+
+    private var peopleLine: String {
+        let names = event.attendees
+        guard names.count > 2 else { return names.joined(separator: ", ") }
+        return names.prefix(2).joined(separator: ", ") + " +\(names.count - 2)"
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    if isNow {
+                        Circle()
+                            .fill(Theme.record)
+                            .frame(width: 7, height: 7)
+                    }
+                    Eyebrow("\(isNow ? "Now" : "Next") · \(event.timeRange)")
+                }
+                Text(event.title.isEmpty ? "Calendar event" : event.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                if !people.isEmpty || event.teamsJoinURL != nil {
+                    HStack(spacing: 8) {
+                        if !people.isEmpty {
+                            AvatarStack(speakers: people, size: 22, limit: 3)
+                            Text(peopleLine)
+                                .font(.footnote)
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
+                        }
+                        if event.teamsJoinURL != nil {
+                            Chip(text: "Teams", systemImage: "video.fill", tint: Theme.brand)
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+            Button(action: onRecord) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 50, height: 50)
+                    .background(Theme.recordGradient, in: Circle())
+                    .shadow(color: Theme.record.opacity(0.35), radius: 10, y: 4)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Record \(event.title.isEmpty ? "this meeting" : event.title)")
+        }
+        .cardStyle()
     }
 }
 

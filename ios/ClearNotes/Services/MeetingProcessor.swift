@@ -143,12 +143,13 @@ enum MeetingProcessor {
             meeting.modelContext?.delete(stale)
         }
         let known = Set(reviewed.map { $0.text.lowercased() })
+        let speakerNames = meeting.speakers.compactMap(\.name)
         let suggestions = insights.actions
             .filter { !known.contains($0.task.lowercased()) }
             .map { extracted in
                 ActionItem(
                     text: extracted.task,
-                    owner: extracted.owner,
+                    owner: extracted.owner.map { OwnerMatcher.match($0, speakers: speakerNames, attendees: meeting.attendees) },
                     due: extracted.due,
                     status: .suggested,
                     sourceSegmentID: meeting.segments.segment(matching: extracted.evidence)?.id

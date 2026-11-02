@@ -41,7 +41,7 @@ Phase 1 (done) is a private, on-device iPhone app: capture, transcription, speak
 - **OneNote:** create a page in a chosen notebook section (**Notes.Create**).
 - Useful for governance minutes and project boards.
 
-### Calendar awareness
+### Calendar awareness (built: Settings → Calendar)
 - **On-device first:** iOS **EventKit** reads the calendars in Apple's Calendar app, after the user allows it. When you start recording during an event, the meeting is titled automatically. Where an attendee list is available, it feeds speaker-naming suggestions and owner matching.
 - **Outlook app calendars** are private to the Outlook app. They reach EventKit in one of two ways:
   - **Outlook → Settings → your account → Sync Calendars.** This copies events to Apple's Calendar app. Expect titles and times, but probably not attendees, because iOS doesn't let apps like Outlook write attendee lists. An Intune app protection policy can block it ("Sync policy managed app data with native apps or add-ins").
@@ -132,7 +132,7 @@ A Teams app that lives inside meetings needs hosted components. Plan for a small
 | 0 | Infrastructure and cyber team creates the app registration; DPIA updated | No |
 | 1 | Microsoft sign-in (MSAL + broker) | No |
 | 2 | Send actions to To Do | No |
-| 3 | Calendar awareness (EventKit) for titles and attendee-based naming | No |
+| 3 | Calendar awareness (EventKit) for titles and attendee-based naming. **Built**: see Settings → Calendar | No |
 | 4 | Send actions to Planner with owner matching | No |
 | 5 | Outlook draft follow-up and save notes to OneDrive/OneNote | No |
 | 6 | Import Teams transcripts (admin consent) | No |
