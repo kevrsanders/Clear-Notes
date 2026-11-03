@@ -322,7 +322,7 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
             Transcript:
             \(chunk.text)
             """
-        let text = try await withRetries {
+        let text = try await Self.withRetries {
             let session = LanguageModelSession(model: model, instructions: Self.instructions)
             return try await session.respond(to: prompt).content
         }
@@ -367,7 +367,7 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
 
     /// One request to the model for structured notes.
     private func generate<Content: Generable>(_ prompt: String, as type: Content.Type) async throws -> Content {
-        try await withRetries {
+        try await Self.withRetries {
             let session = LanguageModelSession(instructions: Self.instructions)
             return try await session.respond(to: prompt, generating: type).content
         }
@@ -375,7 +375,7 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
 
     /// Runs a request, retrying with growing waits while the system is busy, and once after a
     /// generic system error, which is often temporary. Safety blocks aren't retried.
-    private func withRetries<Value>(_ request: () async throws -> Value) async throws -> Value {
+    static func withRetries<Value>(_ request: () async throws -> Value) async throws -> Value {
         var attempt = 0
         var retriedSystemError = false
         while true {

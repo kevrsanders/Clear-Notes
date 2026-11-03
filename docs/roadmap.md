@@ -1,6 +1,6 @@
 # Clear Notes — Roadmap (Phase 2 onwards)
 
-_Planning notes, not yet built. Last updated 2 November 2026 (decisions recorded)._
+_Planning notes, not yet built. Last updated 3 November 2026 (sharing into NHSmail Microsoft 365 on hold, see below)._
 
 Phase 1 (done) is a private, on-device iPhone app: capture, transcription, speakers, notes, actions, playback and voice memory. Next we connect it to where work actually happens, mainly Microsoft 365, while keeping the privacy-first design.
 
@@ -10,6 +10,10 @@ Phase 1 (done) is a private, on-device iPhone app: capture, transcription, speak
 2. **Least privilege.** Ask only for the permissions a feature needs, and only when the user turns that feature on.
 3. **The user sends things out.** Nothing is pushed to Microsoft 365 automatically. The user reviews and taps *Send to Planner* or *Send to To Do*.
 4. **Governance first.** Each integration changes the data flow, so the DPIA needs updating and Information Governance (IG) needs to approve it before use with real meetings.
+5. **General-purpose, not NHS-specific.** NHSmail and the local trust tenant are the first places it will be used, not the product's limits. Every feature has to work for any organisation, and for someone with no work account at all:
+   - Microsoft 365 features work with **any Entra ID tenant**. The tenant and client ID are configuration, not code. There's no NHS-specific logic, wording or defaults.
+   - Organisation controls such as Intune app protection, Conditional Access and admin consent are **switched on by the organisation's own policy**. They aren't hard-coded, and the app behaves normally when they're absent.
+   - Sign-in stays **optional**. Without it, everything on the device keeps working, including recording, notes, minutes, sharing and the share sheet.
 
 ---
 
@@ -33,7 +37,7 @@ Phase 1 (done) is a private, on-device iPhone app: capture, transcription, speak
 - The task description includes the meeting, the date and the transcript quote the action came from.
 
 ### Follow-up email via Outlook
-- Simplest option, which needs no permission: hand the drafted email to the Outlook app through the share sheet (already possible today).
+- Simplest option, which needs no permission: hand the drafted email to the Outlook app through the share sheet. **This doesn't work under NHSmail's Intune app protection:** Outlook won't accept shared or pasted content from Clear Notes. See *On hold: sharing into NHSmail Microsoft 365* below.
 - Richer option: **create a draft** in the user's mailbox addressed to the meeting attendees (Graph **Mail.ReadWrite**, `POST /me/messages`). The user reviews and sends it in Outlook. Clear Notes never sends email itself.
 
 ### Save notes for the record
@@ -126,6 +130,43 @@ A Teams app that lives inside meetings needs hosted components. Plan for a small
   - Whether Intune app protection is required, which means adding the Intune App SDK.
   - Whether Graph can access Teams transcripts in this tenant.
 - **For the builds:** the client ID and tenant ID go in GitHub Actions **variables**, like the bundle ID. They identify the app but aren't secrets, so no client secret is needed for the iPhone app.
+
+## On hold: sharing into NHSmail Microsoft 365
+
+_Recorded 3 November 2026. **Waiting on the NHSmail administrator.** Nothing is built yet._
+
+### The problem
+Minutes and notes can't be copied, pasted or shared from Clear Notes into Outlook, OneDrive or Teams on the iPhone. NHSmail's central Intune **app protection policy** covers those apps. Microsoft's documentation describes these settings:
+- **Restrict cut, copy and paste: Policy managed apps** blocks pasting from an unmanaged app into a managed one.
+- **Receive data from other apps: Policy managed apps** blocks sharing into managed apps.
+
+Clear Notes isn't a policy-managed app, so both are refused. This is deliberate data-loss protection. **Don't get round it** with personal email, AirDrop to a personal device or screenshots, because that would breach the policy and IG rules.
+
+### The gate
+**Can a custom app be added to NHSmail's Intune app protection policy?** Kev is asking the NHSmail administrator. NHSmail's Intune is run centrally by NHS England, so expect a formal onboarding and assurance process (likely DTAC, DSPT, the DPIA and possibly a penetration test). If the answer is no, options 2 and 3 aren't worth building for NHSmail.
+
+### Options
+
+1. **Apple Mail with the NHSmail account already on the iPhone (no code).** The account added in iOS Settings for the calendar may also allow Mail: Settings → Apps → Mail → Mail Accounts. If it does, in Clear Notes tap Share → Mail and send the minutes from the NHSmail address. Apple Mail isn't covered by app protection. Confirm with IG that it's acceptable. A possible small follow-up is an **Email minutes** button that fills in the subject and attaches the minutes as a Word or PDF file.
+
+2. **Make Clear Notes an Intune-managed app.** Add MSAL sign-in and the **Intune App SDK** (SwiftPM or framework; iOS 16 or later is required, and we target 17). Call `registerAndEnrollAccountId` after sign-in, and support App Protection CA (`protapp` client capability, `remediateComplianceForIdentity`). MSAL interactive sign-in should use WKWebView.
+   - **Result:** copy, paste and share into Outlook, OneDrive and Teams work normally. Clear Notes' own data also gets org protections (encryption, PIN, selective wipe), which helps the DPIA.
+   - **The policy must be NHSmail's.** Intune keeps each organisation's data separate, so managing Clear Notes from the local tenant won't open up NHSmail Outlook.
+   - The admin adds the app by bundle ID ("more apps") to the policy's targeted apps.
+   - Docs: [Intune App SDK for iOS](https://learn.microsoft.com/intune/developer/app-sdk/ios-phase-1), [iOS app protection settings](https://learn.microsoft.com/intune/app-management/protection/ref-settings-ios).
+
+3. **Send straight into Microsoft 365 with Microsoft Graph.** Create an Outlook draft (`Mail.ReadWrite`), save minutes as a Word document to OneDrive or SharePoint (`Files.ReadWrite`), or post to a Teams chat. This skips the phone's clipboard, but it still needs tenant consent, and NHSmail's Conditional Access may also require option 2. It's the same NHSmail approval. **For the local-tenant pilot**, the infrastructure and cyber team can approve it themselves, which is useful if the trust has its own Teams, SharePoint or OneDrive there. Content leaves the iPhone, so the DPIA needs updating.
+
+### Whatever is built stays general (see principle 5)
+- **Intune App SDK:** it only takes effect when a signed-in account's organisation targets the app with an app protection policy. For everyone else, including unmanaged users, App Store installs and other Microsoft 365 tenants, the app behaves exactly as now. Never set `MAMPolicyRequired`, which would block the app without a policy (Apple won't accept that on the App Store either). Support multi-identity if a personal or second account is ever allowed.
+- **Microsoft Graph sharing** (Outlook draft, OneDrive, Teams) works with any tenant: a multi-tenant app registration for general release, or a single-tenant one per organisation, set through build or app configuration. NHSmail is one deployment.
+- **Apple Mail / share sheet / Email minutes** works for anyone, with any mail account.
+- Keep NHS-specific guidance (NHSmail onboarding, DTAC, DSPT) in docs like this one, not in the app.
+
+### Plan once the gate is answered
+- **NHSmail says yes:** build options 2 and 3 together, prove them against the local tenant with the infrastructure and cyber team, then submit to NHSmail onboarding with that evidence.
+- **NHSmail says no:** rely on option 1, if IG agrees, and option 3 for the local tenant only.
+- **Open questions:** Can Mail be turned on for the NHSmail account on the iPhone? Does the local tenant have its own Teams, SharePoint or OneDrive, or is everything on NHSmail?
 
 ## Suggested order
 

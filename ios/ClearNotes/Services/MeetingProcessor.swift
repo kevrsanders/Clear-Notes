@@ -113,7 +113,10 @@ enum MeetingProcessor {
         }
         guard let separator else { return }
         do {
-            let turns = try await separator.separate(audioAt: RecordingStore.url(for: audioFileName), expectedSpeakers: nil)
+            let turns = try await separator.separate(
+                audioAt: RecordingStore.url(for: audioFileName),
+                expectedSpeakers: meeting.expectedSpeakers
+            )
             UserDefaults.standard.set(true, forKey: SettingsKeys.speakerModelsReady)
             let assigned = SpeakerAssigner.assign(meeting.segments, turns: turns)
             meeting.segments = assigned.segments
@@ -161,6 +164,7 @@ enum MeetingProcessor {
             meeting.speakers = voiceprintsAllowed(renamed)
             VoiceLibrary.applyMatches(to: meeting)
             meeting.speakerNote = nil
+            meeting.expectedSpeakers = count
             meeting.notesNeedRefresh = previousState == .ready
         } catch {
             meeting.speakerNote = "Speakers couldn't be re-checked. \(error.localizedDescription)"

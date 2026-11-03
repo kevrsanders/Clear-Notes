@@ -9,6 +9,8 @@ struct RecordingResult {
     var audioFileName: String?
     /// Moments marked as actions or decisions while recording.
     var marks: [MeetingMark] = []
+    /// How many people the user said are in the meeting, or nil for Auto.
+    var expectedSpeakers: Int?
 }
 
 enum RecorderError: LocalizedError {
@@ -95,6 +97,8 @@ final class MeetingRecorder {
     private var ticker: Timer?
     private var interruptionObserver: NSObjectProtocol?
     private var audioFileName: String?
+    /// Timer, Pause and Mark buttons on the Lock Screen and in the Dynamic Island.
+    private let liveActivity = RecordingLiveActivity()
 
     private var currentTime: TimeInterval {
         accumulated + (resumedAt.map { Date().timeIntervalSince($0) } ?? 0)
@@ -204,6 +208,8 @@ final class MeetingRecorder {
         if !usesModernEngine { beginChunk() }
         startTicker()
         observeInterruptions()
+        RecordingControls.handler = { [weak self] command in self?.handle(command) }
+        liveActivity.start()
     }
 
     func pause() {
@@ -214,18 +220,28 @@ final class MeetingRecorder {
         }
         accumulated = currentTime
         resumedAt = nil
-        engine.pause()
+        // The microphone stays open while paused, but nothing is kept or transcribed. iOS doesn't
+        // let an app in the background open the microphone afresh, so this is what lets Resume work
+        // from the Lock Screen.
+        pipe.hold(true)
         state = .paused
         elapsed = accumulated
+        liveActivity.update { $0 = RecordingLiveActivity.paused($0) }
     }
 
     func resume() throws {
         guard state == .paused else { return }
-        try AVAudioSession.sharedInstance().setActive(true)
-        try engine.start()
+        if !engine.isRunning {
+            // A phone call or another app took the microphone.
+            try AVAudioSession.sharedInstance().setActive(true)
+            try engine.start()
+        }
+        pipe.hold(false)
         resumedAt = Date()
         state = .recording
         if !usesModernEngine { beginChunk() }
+        let elapsedNow = accumulated
+        liveActivity.update { $0 = RecordingLiveActivity.resumed($0, elapsed: elapsedNow) }
     }
 
     /// Stops capture and waits briefly for the recogniser to deliver its final text.
@@ -233,6 +249,7 @@ final class MeetingRecorder {
         guard state == .recording || state == .paused else {
             return RecordingResult(duration: accumulated, segments: segments, audioFileName: nil)
         }
+        endLockScreenControls()
         if state == .recording {
             chunks[currentChunk]?.end = currentTime
             accumulated = currentTime
@@ -278,10 +295,36 @@ final class MeetingRecorder {
     /// Notes the current moment as an action or decision, e.g. just after one was agreed.
     func mark(_ kind: MeetingMark.Kind) {
         guard state == .recording else { return }
-        marks.append(MeetingMark(kind: kind, time: currentTime))
+        let time = currentTime
+        marks.append(MeetingMark(kind: kind, time: time))
+        liveActivity.update { $0 = RecordingLiveActivity.marked($0, kind: kind, at: time) }
+    }
+
+    /// A tap on the Lock Screen or Dynamic Island.
+    private func handle(_ command: RecordingCommand) {
+        switch command {
+        case .pause:
+            pause()
+        case .resume:
+            do {
+                try resume()
+            } catch {
+                liveActivity.update { $0.note = "Open Clear Notes to resume" }
+            }
+        case .markAction:
+            mark(.action)
+        case .markDecision:
+            mark(.decision)
+        }
+    }
+
+    private func endLockScreenControls() {
+        RecordingControls.handler = nil
+        liveActivity.end()
     }
 
     func discard() {
+        endLockScreenControls()
         pipe.swap(to: nil)?.endAudio()
         tasks.values.forEach { $0.cancel() }
         tasks = [:]
@@ -524,6 +567,8 @@ enum TranscriptJoiner {
 private final class RecognitionPipe: @unchecked Sendable {
     private let lock = NSLock()
     private var request: SFSpeechAudioBufferRecognitionRequest?
+    /// While paused, audio still arrives (the microphone stays open) but is dropped.
+    private var isHeld = false
     private var audioFile: AVAudioFile?
     private var converter: AVAudioConverter?
     private let gain = AutomaticGain()
@@ -536,6 +581,12 @@ private final class RecognitionPipe: @unchecked Sendable {
     var onLevel: (@Sendable (Float) -> Void)?
     /// Receives every buffer sent for transcription, e.g. to the iOS 26 transcriber.
     var onBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?
+
+    func hold(_ held: Bool) {
+        lock.lock()
+        isHeld = held
+        lock.unlock()
+    }
 
     /// Replaces the request that receives audio and returns the previous one.
     @discardableResult
@@ -599,6 +650,10 @@ private final class RecognitionPipe: @unchecked Sendable {
     }
 
     private func receive(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        let held = isHeld
+        lock.unlock()
+        guard !held else { return }
         // The engine reuses this buffer's memory for the next callback, and the converters (and
         // the transcriber's queue) can keep the end of one buffer until the next arrives. Working on
         // copies that nothing changes afterwards stops one buffer's join corrupting the next,

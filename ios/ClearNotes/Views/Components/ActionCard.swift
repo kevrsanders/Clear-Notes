@@ -4,8 +4,6 @@ import SwiftUI
 struct ActionCard: View {
     @Bindable var action: ActionItem
     var onShowSource: (() -> Void)?
-    /// When set, a footer row names the meeting and opens it.
-    var onOpenMeeting: (() -> Void)?
     /// When set, the action can be turned into a decision, for one that was really something agreed.
     var onMakeDecision: (() -> Void)?
 
@@ -57,25 +55,6 @@ struct ActionCard: View {
                     }
                 }
                 .padding(.leading, 44)
-            }
-
-            if let onOpenMeeting, let meeting = action.meeting {
-                Divider()
-                Button(action: onOpenMeeting) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "waveform")
-                        Text(meeting.title)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.bold))
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(Theme.textSecondary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open meeting \(meeting.title)")
             }
         }
         .cardStyle(padding: 16)

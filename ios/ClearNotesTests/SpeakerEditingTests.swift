@@ -84,3 +84,54 @@ final class SpeakerNamesTests: XCTestCase {
         XCTAssertNil(renamed.first?.name)
     }
 }
+
+@MainActor
+final class ExpectedSpeakersTests: XCTestCase {
+    /// Held for the whole test. SwiftData models stop saving changes once their container is released.
+    private var container: ModelContainer?
+
+    /// Finds as many voices as it's told to, or one when left to work it out.
+    private struct CountingSeparator: SpeakerSeparating {
+        func separate(audioAt url: URL, expectedSpeakers: Int?) async throws -> [SpeakerTurn] {
+            let count = expectedSpeakers ?? 1
+            return (0..<3).map { index in
+                SpeakerTurn(speaker: "voice\(index % count)", start: Double(index) * 4, end: Double(index + 1) * 4)
+            }
+        }
+    }
+
+    private func makeMeeting(expectedSpeakers: Int?) throws -> Meeting {
+        let container = try ModelContainer(
+            for: Meeting.self, ActionItem.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        self.container = container
+        let meeting = Meeting(title: "Test", segments: [
+            TranscriptSegment(start: 0, end: 4, text: "Shall we start with the rota?"),
+            TranscriptSegment(start: 4, end: 8, text: "Yes, the new one is ready."),
+            TranscriptSegment(start: 8, end: 12, text: "I'll share it this afternoon."),
+        ])
+        meeting.pendingAudioFileName = "expected-speakers-test.m4a"
+        meeting.expectedSpeakers = expectedSpeakers
+        container.mainContext.insert(meeting)
+        return meeting
+    }
+
+    func testTheNumberChosenWhenRecordingIsUsedToSeparateVoices() async throws {
+        let meeting = try makeMeeting(expectedSpeakers: 3)
+
+        await MeetingProcessor.process(meeting, enhancer: HeuristicEnhancer(), separator: CountingSeparator())
+
+        XCTAssertEqual(meeting.speakers.count, 3)
+        XCTAssertEqual(meeting.expectedSpeakers, 3)
+    }
+
+    func testAutoLeavesTheNumberToTheSeparator() async throws {
+        let meeting = try makeMeeting(expectedSpeakers: nil)
+
+        await MeetingProcessor.process(meeting, enhancer: HeuristicEnhancer(), separator: CountingSeparator())
+
+        XCTAssertEqual(meeting.speakers.count, 1)
+        XCTAssertNil(meeting.expectedSpeakers)
+    }
+}

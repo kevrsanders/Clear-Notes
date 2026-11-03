@@ -5,7 +5,6 @@ import SwiftUI
 struct MeetingsListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
-    @Query private var actions: [ActionItem]
     @AppStorage(SettingsKeys.showConsentReminder) private var showConsentReminder = true
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @AppStorage(SettingsKeys.myName) private var myName = ""
@@ -148,22 +147,17 @@ struct MeetingsListView: View {
         }
     }
 
+    /// Meeting counts only. Actions belong to their meeting, so they're shown on each meeting card.
     private var stats: some View {
-        let toReview = actions.filter { $0.status == .suggested }.count
-        let open = actions.filter { $0.status == .open }.count
-        let openMeetings = Set(actions.filter { $0.status == .open }.compactMap { $0.meeting?.persistentModelID }).count
-        let weekStart = Calendar.current.date(byAdding: .day, value: -7, to: .now) ?? .now
+        let calendar = Calendar.current
+        let today = meetings.filter { calendar.isDateInToday($0.createdAt) }
+        let weekStart = calendar.date(byAdding: .day, value: -7, to: .now) ?? .now
         let thisWeek = meetings.filter { $0.createdAt >= weekStart }
-        let weekTime = thisWeek.reduce(0) { $0 + $1.duration }
+        func time(_ list: [Meeting]) -> String { list.reduce(TimeInterval(0)) { $0 + $1.duration }.compactDurationString }
         return HStack(spacing: 10) {
-            StatTile(title: "To review", value: "\(toReview)", hint: "AI suggestions", tint: Theme.brand)
-            StatTile(
-                title: "Open",
-                value: "\(open)",
-                hint: "across \(openMeetings) meeting\(openMeetings == 1 ? "" : "s")",
-                tint: .primary
-            )
-            StatTile(title: "This week", value: "\(thisWeek.count)", hint: "\(weekTime.compactDurationString) of meetings", tint: .primary)
+            StatTile(title: "Today", value: "\(today.count)", hint: "\(time(today)) recorded", tint: Theme.brand)
+            StatTile(title: "This week", value: "\(thisWeek.count)", hint: "\(time(thisWeek)) of meetings", tint: .primary)
+            StatTile(title: "All", value: "\(meetings.count)", hint: "\(time(meetings)) in total", tint: .primary)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -272,6 +266,7 @@ struct MeetingsListView: View {
             pendingAudioFileName: separatesSpeakers ? result.audioFileName : nil
         )
         meeting.marks = result.marks
+        meeting.expectedSpeakers = result.expectedSpeakers
         if let event {
             meeting.link(to: event)
         }
