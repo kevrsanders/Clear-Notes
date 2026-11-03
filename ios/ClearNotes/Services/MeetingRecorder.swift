@@ -589,6 +589,11 @@ private final class RecognitionPipe: @unchecked Sendable {
     }
 
     private func receive(_ buffer: AVAudioPCMBuffer) {
+        // The engine reuses this buffer's memory for the next callback, and the converters (and
+        // the transcriber's queue) can keep the end of one buffer until the next arrives. Working on
+        // copies that nothing changes afterwards stops one buffer's join corrupting the next,
+        // which was heard as a regular click and fed damaged audio to the transcriber.
+        guard let recorded = buffer.copied(), let heard = buffer.copied() else { return }
         lock.lock()
         let current = request
         let file = audioFile
@@ -596,15 +601,15 @@ private final class RecognitionPipe: @unchecked Sendable {
         lock.unlock()
         // The kept recording (playback and speaker separation) gets the untouched microphone audio.
         if let file, let converter {
-            write(buffer, using: converter, to: file)
+            write(recorded, using: converter, to: file)
         }
-        onLevel?(Self.normalisedLevel(of: buffer))
+        onLevel?(Self.normalisedLevel(of: recorded))
         // Only the transcriber hears the boosted version.
         if boostsQuietSpeech {
-            gain.apply(to: buffer)
+            gain.apply(to: heard)
         }
-        current?.append(buffer)
-        onBuffer?(buffer)
+        current?.append(heard)
+        onBuffer?(heard)
     }
 
     private func write(_ buffer: AVAudioPCMBuffer, using converter: AVAudioConverter, to file: AVAudioFile) {
@@ -684,18 +689,37 @@ final class AutomaticGain: @unchecked Sendable {
 
         // Background level: follows quiet moments quickly and loud ones very slowly.
         noiseFloor = rms < noiseFloor ? rms : noiseFloor + (rms - noiseFloor) * 0.002
+        let startGain = gain
         if rms > max(noiseFloor, 0.001) * Self.speechRatio {
             let desired = Self.desiredGain(forLevel: rms)
             // Turn down quickly when speech gets loud, up gently for quieter voices.
             gain += (desired - gain) * (desired < gain ? 0.5 : 0.1)
         }
 
-        guard gain > 1.01 else { return }
+        guard startGain > 1.01 || gain > 1.01 else { return }
+        // Glide from the old gain to the new one across the buffer. A jump at the join between
+        // buffers would be a click.
+        let step = (gain - startGain) / Float(count)
         for channel in 0..<Int(buffer.format.channelCount) {
             let samples = channels[channel]
             for i in 0..<count {
-                samples[i] = Self.limit(samples[i] * gain)
+                samples[i] = Self.limit(samples[i] * (startGain + step * Float(i)))
             }
         }
+    }
+}
+
+extension AVAudioPCMBuffer {
+    /// A copy with its own memory, safe to keep or change after the audio callback returns.
+    func copied() -> AVAudioPCMBuffer? {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: max(frameLength, 1)) else { return nil }
+        copy.frameLength = frameLength
+        let source = UnsafeMutableAudioBufferListPointer(mutableAudioBufferList)
+        let destination = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+        for (from, to) in zip(source, destination) {
+            guard let fromData = from.mData, let toData = to.mData else { continue }
+            memcpy(toData, fromData, Int(min(from.mDataByteSize, to.mDataByteSize)))
+        }
+        return copy
     }
 }
