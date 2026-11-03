@@ -175,7 +175,7 @@ enum MeetingProcessor {
         }
         let known = Set(reviewed.map { $0.text.lowercased() })
         let speakerNames = meeting.speakers.compactMap(\.name)
-        let suggestions = insights.actions
+        let suggestions = ActionList.deduplicated(insights.actions)
             .filter { !known.contains($0.task.lowercased()) }
             .map { extracted in
                 ActionItem(

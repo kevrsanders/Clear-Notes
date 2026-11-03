@@ -24,7 +24,7 @@ struct ChunkInsights {
     var keyPoints: [String]
     @Guide(description: "Decisions that were clearly agreed. Leave empty if none.")
     var decisions: [String]
-    @Guide(description: "Tasks someone committed to or was asked to do. Leave empty if none.")
+    @Guide(description: "At most three tasks that someone clearly committed to or was clearly asked to do. Not general discussion, ideas or things that might happen. Leave empty if none.")
     var actions: [GeneratedAction]
 }
 
@@ -33,7 +33,7 @@ struct ChunkInsights {
 struct MeetingOverview {
     @Guide(description: "A short, specific meeting title of at most six words")
     var title: String
-    @Guide(description: "A summary of the meeting in three to five bullet points, each starting with '- '")
+    @Guide(description: "A summary of the meeting in three to five bullet points, one per line, each starting with '- '. Plain text only: no HTML or Markdown.")
     var summary: String
 }
 
@@ -53,6 +53,8 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
     private let notesCharacterLimit = 1_200
     /// Key points sent for the overall summary, so a long meeting doesn't overflow the model.
     private let overviewCharacterLimit = 3_000
+    /// Most actions taken from each part, so a long meeting doesn't produce a hundred suggestions.
+    static let actionsPerPart = 3
     /// Waits before retrying when Apple Intelligence is busy (rate limited).
     private static let busyRetryDelays: [Duration] = [.seconds(3), .seconds(8), .seconds(20)]
 
@@ -72,6 +74,7 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
     /// meaning Apple Intelligence.
     static func reason(for error: Error) -> String {
         if (error as? NotesEnhancerError) == .busy { return "it was busy" }
+        if isSafetyBlock(error) { return "Apple's safety filter declined part of the conversation" }
         guard let generationError = error as? LanguageModelSession.GenerationError else {
             // E.g. "FoundationModels.LanguageModelError error -1": a generic system error.
             let nsError = error as NSError
@@ -85,8 +88,16 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         case .assetsUnavailable: return "it wasn't ready on this iPhone"
         case .unsupportedLanguageOrLocale: return "the language isn't supported"
         case .decodingFailure, .unsupportedGuide: return "its answer couldn't be read"
-        default: return generationError.localizedDescription
+        default: return "it couldn't answer (\(generationError.localizedDescription))"
         }
+    }
+
+    /// Apple's safety filter blocked the request. It reports this in more than one way, e.g. a
+    /// guardrail violation or "Detected content likely to be unsafe".
+    static func isSafetyBlock(_ error: Error) -> Bool {
+        if case .guardrailViolation? = error as? LanguageModelSession.GenerationError { return true }
+        let description = error.localizedDescription.lowercased()
+        return description.contains("unsafe") || description.contains("guardrail") || description.contains("refus")
     }
 
     func enhance(segments: [TranscriptSegment], speakers: [Speaker], userNotes: String) async throws -> MeetingInsights {
@@ -117,8 +128,9 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
                     "Write a title and summary for a meeting with these key points:\n" + points.map { "- \($0)" }.joined(separator: "\n"),
                     as: MeetingOverview.self
                 )
-                title = overview.title
-                summary = overview.summary
+                title = NotesText.plain(overview.title)
+                // The model sometimes answers in HTML (<ul><li>…) despite the instructions.
+                summary = NotesText.bulletList(overview.summary)
             } catch let error as NotesEnhancerError {
                 throw error
             } catch is CancellationError {
@@ -214,14 +226,14 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         do {
             let result = try await generate(prompt, as: ChunkInsights.self)
             return [PartResult(
-                topic: result.topic.trimmingCharacters(in: .whitespacesAndNewlines),
-                keyPoints: result.keyPoints,
-                decisions: result.decisions,
-                actions: result.actions.map {
+                topic: NotesText.plain(result.topic),
+                keyPoints: result.keyPoints.map(NotesText.plain).filter { !$0.isEmpty },
+                decisions: result.decisions.map(NotesText.plain).filter { !$0.isEmpty },
+                actions: result.actions.prefix(Self.actionsPerPart).map {
                     ExtractedAction(
-                        task: $0.task,
-                        owner: $0.owner.isEmpty ? nil : $0.owner,
-                        due: $0.due.isEmpty ? nil : $0.due,
+                        task: NotesText.plain($0.task),
+                        owner: $0.owner.isEmpty ? nil : NotesText.plain($0.owner),
+                        due: $0.due.isEmpty ? nil : NotesText.plain($0.due),
                         evidence: $0.quote
                     )
                 },
@@ -242,12 +254,37 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
                 let secondResults = try await extract(second, notes: notes, speakers: speakers, labels: labels, allowSplit: false)
                 return firstResults + secondResults
             }
+            if Self.isSafetyBlock(error), let points = try? await permissiveKeyPoints(for: chunk), !points.isEmpty {
+                // Apple's summarising mode wrote the key points; rules find this part's decisions and actions.
+                var part = try await basicPart(chunk, speakers: speakers, reason: nil)
+                part.keyPoints = points
+                return [part]
+            }
             return [try await basicPart(chunk, speakers: speakers, reason: Self.reason(for: error))]
         }
     }
 
+    /// For a part Apple's safety filter blocked. The filter can't be turned off, but Apple has a
+    /// gentler mode for summarising text the user supplies, such as a meeting transcript. It only
+    /// applies to plain-text answers, so this asks for plain bullet points rather than structured notes.
+    private func permissiveKeyPoints(for chunk: Chunk) async throws -> [String] {
+        let model = SystemLanguageModel(guardrails: .permissiveContentTransformations)
+        let prompt = """
+            Summarise this part of a work meeting transcript as up to six short bullet points, \
+            one per line, each starting with "- ". Plain text only.
+
+            Transcript:
+            \(chunk.text)
+            """
+        let text = try await withRetries {
+            let session = LanguageModelSession(model: model, instructions: Self.instructions)
+            return try await session.respond(to: prompt).content
+        }
+        return Array(NotesText.bullets(from: text).prefix(6))
+    }
+
     /// Rule-based extraction for one part the model couldn't handle.
-    private func basicPart(_ chunk: Chunk, speakers: [Speaker], reason: String) async throws -> PartResult {
+    private func basicPart(_ chunk: Chunk, speakers: [Speaker], reason: String?) async throws -> PartResult {
         let basic = try await HeuristicEnhancer().enhance(segments: chunk.segments, speakers: speakers, userNotes: "")
         let points = basic.summary
             .split(whereSeparator: \.isNewline)
@@ -258,7 +295,7 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
             topic: "",
             keyPoints: points,
             decisions: basic.decisions,
-            actions: basic.actions,
+            actions: Array(basic.actions.prefix(Self.actionsPerPart)),
             start: chunk.start,
             end: chunk.end,
             basicReason: reason
@@ -282,15 +319,22 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         return chosen
     }
 
-    /// One request to the model, retried with growing waits while the system is busy, and once
-    /// after a generic system error, which is often temporary.
+    /// One request to the model for structured notes.
     private func generate<Content: Generable>(_ prompt: String, as type: Content.Type) async throws -> Content {
+        try await withRetries {
+            let session = LanguageModelSession(instructions: Self.instructions)
+            return try await session.respond(to: prompt, generating: type).content
+        }
+    }
+
+    /// Runs a request, retrying with growing waits while the system is busy, and once after a
+    /// generic system error, which is often temporary. Safety blocks aren't retried.
+    private func withRetries<Value>(_ request: () async throws -> Value) async throws -> Value {
         var attempt = 0
         var retriedSystemError = false
         while true {
             do {
-                let session = LanguageModelSession(instructions: Self.instructions)
-                return try await session.respond(to: prompt, generating: type).content
+                return try await request()
             } catch let error as LanguageModelSession.GenerationError {
                 guard case .rateLimited = error else { throw error }
                 guard attempt < Self.busyRetryDelays.count else { throw NotesEnhancerError.busy }
@@ -299,7 +343,7 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                guard !retriedSystemError else { throw error }
+                guard !retriedSystemError, !Self.isSafetyBlock(error) else { throw error }
                 retriedSystemError = true
                 try await Task.sleep(for: .seconds(2))
             }

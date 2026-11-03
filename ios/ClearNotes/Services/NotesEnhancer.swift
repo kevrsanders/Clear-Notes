@@ -66,6 +66,75 @@ enum NotesEnhancers {
     }
 }
 
+/// Tidies text from the language model, which sometimes answers in HTML or other bullet styles.
+enum NotesText {
+    /// Bullet points from "- " lines, "•" or "*" bullets, numbered lines or HTML list items.
+    static func bullets(from text: String) -> [String] {
+        var source = text.replacingOccurrences(of: "(?i)<li[^>]*>", with: "\n", options: .regularExpression)
+        source = source.replacingOccurrences(of: "(?i)<br\\s*/?>", with: "\n", options: .regularExpression)
+        return plain(source)
+            .split(whereSeparator: \.isNewline)
+            .map { line -> String in
+                var item = line.trimmingCharacters(in: .whitespaces)
+                while let first = item.first, "-•*–".contains(first) {
+                    item = String(item.dropFirst()).trimmingCharacters(in: .whitespaces)
+                }
+                if let number = item.range(of: #"^\d+[.)]\s+"#, options: .regularExpression) {
+                    item.removeSubrange(number)
+                }
+                return item
+            }
+            .filter { !$0.isEmpty }
+    }
+
+    /// The same text as "- " bullet lines, the format the notes use.
+    static func bulletList(_ text: String) -> String {
+        bullets(from: text).map { "- \($0)" }.joined(separator: "\n")
+    }
+
+    /// Removes HTML tags and decodes the common entities.
+    static func plain(_ text: String) -> String {
+        var result = text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        let entities = [("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&apos;", "'"), ("&nbsp;", " "), ("&amp;", "&")]
+        for (entity, character) in entities {
+            result = result.replacingOccurrences(of: entity, with: character)
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// Keeps one of each action when several parts of a meeting suggest the same thing.
+enum ActionList {
+    /// Two actions are the same when most of their words match and they aren't for different people.
+    static func deduplicated(_ actions: [ExtractedAction]) -> [ExtractedAction] {
+        var kept: [(action: ExtractedAction, words: Set<String>)] = []
+        for action in actions {
+            let words = significantWords(action.task)
+            guard !words.isEmpty else { continue }
+            let repeatsOne = kept.contains { other in
+                let overlap = Double(words.intersection(other.words).count) / Double(words.union(other.words).count)
+                return overlap >= 0.6 && sameOrUnknownOwner(action.owner, other.action.owner)
+            }
+            if !repeatsOne {
+                kept.append((action, words))
+            }
+        }
+        return kept.map(\.action)
+    }
+
+    private static func sameOrUnknownOwner(_ first: String?, _ second: String?) -> Bool {
+        guard let first, let second else { return true }
+        return first.caseInsensitiveCompare(second) == .orderedSame
+    }
+
+    private static func significantWords(_ text: String) -> Set<String> {
+        Set(text.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .filter { $0.count > 2 })
+    }
+}
+
 extension Array where Element == TranscriptSegment {
     /// The segment whose text best contains the quote, for linking AI output back to the transcript.
     func segment(matching quote: String?) -> TranscriptSegment? {

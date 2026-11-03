@@ -50,6 +50,12 @@ final class NotesFallbackTests: XCTestCase {
         XCTAssertEqual(NotesEnhancers.reason(for: NotesEnhancerError.busy), "it was busy")
     }
 
+    func testSafetyBlocksAreRecognisedAndWorded() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Apple Intelligence reasons need iOS 26") }
+        let blocked = NSError(domain: "FoundationModels", code: 1, userInfo: [NSLocalizedDescriptionKey: "Detected content likely to be unsafe."])
+        XCTAssertEqual(NotesEnhancers.reason(for: blocked), "Apple's safety filter declined part of the conversation")
+    }
+
     func testSuccessfulNotesHaveNoCaveat() async throws {
         let meeting = try makeMeeting()
         meeting.notesCaveat = "Left over from an earlier attempt"
@@ -58,5 +64,42 @@ final class NotesFallbackTests: XCTestCase {
 
         XCTAssertEqual(meeting.processingState, .ready)
         XCTAssertNil(meeting.notesCaveat)
+    }
+}
+
+final class NotesTextTests: XCTestCase {
+    func testHTMLListsBecomeBullets() {
+        let html = "<ul><li>The team&#39;s rota changes next week.</li><li>The migration is the biggest challenge.</li></ul>"
+        XCTAssertEqual(
+            NotesText.bulletList(html),
+            "- The team's rota changes next week.\n- The migration is the biggest challenge."
+        )
+    }
+
+    func testOtherBulletStylesAreNormalised() {
+        XCTAssertEqual(NotesText.bullets(from: "• One\n* Two\n1. Three\n- Four"), ["One", "Two", "Three", "Four"])
+        XCTAssertEqual(NotesText.plain("<b>Patch</b> &amp; reboot"), "Patch & reboot")
+    }
+}
+
+final class ActionListTests: XCTestCase {
+    func testRepeatedActionsAreMerged() {
+        let actions = [
+            ExtractedAction(task: "Send the revised firewall change to CAB", owner: "Priya"),
+            ExtractedAction(task: "Send revised firewall change to the CAB", owner: nil),
+            ExtractedAction(task: "Book the server room for patching", owner: "Tom"),
+        ]
+        XCTAssertEqual(ActionList.deduplicated(actions).map(\.task), [
+            "Send the revised firewall change to CAB",
+            "Book the server room for patching",
+        ])
+    }
+
+    func testSimilarActionsForDifferentPeopleAreKept() {
+        let actions = [
+            ExtractedAction(task: "Send the patching report", owner: "Priya"),
+            ExtractedAction(task: "Send the patching report", owner: "Tom"),
+        ]
+        XCTAssertEqual(ActionList.deduplicated(actions).count, 2)
     }
 }
