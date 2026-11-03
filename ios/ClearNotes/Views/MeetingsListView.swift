@@ -22,6 +22,10 @@ struct MeetingsListView: View {
     @State private var todaysEvents: [CalendarMeeting] = []
     /// The event the user tapped Record on. Nil lets the recorder find the meeting happening now.
     @State private var recordingEvent: CalendarMeeting?
+    /// The previous meeting in the Up next meeting's series, shown in a sheet.
+    @State private var lastTimeMeeting: Meeting?
+    /// Opened after the Last time sheet closes, when the user asks for the full meeting.
+    @State private var openAfterSheet: Meeting?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -29,7 +33,13 @@ struct MeetingsListView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header
                     if search.isEmpty, let upNext {
-                        UpNextCard(event: upNext.event, isNow: upNext.isNow) { newMeeting(for: upNext.event) }
+                        UpNextCard(
+                            event: upNext.event,
+                            isNow: upNext.isNow,
+                            lastTime: previousMeeting(for: upNext.event),
+                            onShowLastTime: { lastTimeMeeting = $0 },
+                            onRecord: { newMeeting(for: upNext.event) }
+                        )
                     }
                     SearchField(text: $search)
                     if meetings.isEmpty {
@@ -58,6 +68,20 @@ struct MeetingsListView: View {
             .background { GlowBackground() }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Meeting.self) { MeetingDetailView(meeting: $0) }
+            .sheet(item: $lastTimeMeeting, onDismiss: {
+                if let meeting = openAfterSheet {
+                    openAfterSheet = nil
+                    path.append(meeting)
+                }
+            }) { previous in
+                LastTimeView(meeting: previous) {
+                    openAfterSheet = previous
+                    lastTimeMeeting = nil
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(32)
+            }
             .overlay(alignment: .bottom) {
                 RecordButton { newMeeting(for: nil) }
                     .padding(.bottom, 12)
@@ -216,6 +240,11 @@ struct MeetingsListView: View {
         CalendarMeetingPicker.upNext(in: todaysEvents, at: .now)
     }
 
+    /// The last meeting in the same series as a calendar event, if one was recorded.
+    private func previousMeeting(for event: CalendarMeeting) -> Meeting? {
+        MeetingSeries.previous(seriesID: event.seriesID, title: event.title, before: event.start, in: meetings)
+    }
+
     private func refreshCalendar() {
         todaysEvents = useCalendar ? CalendarReader.shared.meetingsToday() : []
     }
@@ -265,6 +294,9 @@ struct MeetingsListView: View {
 private struct UpNextCard: View {
     let event: CalendarMeeting
     let isNow: Bool
+    /// The previous meeting in this series, if one was recorded.
+    var lastTime: Meeting?
+    var onShowLastTime: (Meeting) -> Void
     var onRecord: () -> Void
 
     private var people: [Speaker] {
@@ -310,6 +342,24 @@ private struct UpNextCard: View {
                             Chip(text: calendarName, systemImage: "calendar")
                         }
                     }
+                }
+                if let lastTime {
+                    Button {
+                        onShowLastTime(lastTime)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "clock.arrow.circlepath")
+                            Text(LastTime.summaryLine(lastTime))
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.bold))
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.brand)
+                        .padding(.top, 2)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows the summary and actions from the last meeting in this series")
                 }
             }
             Spacer(minLength: 0)

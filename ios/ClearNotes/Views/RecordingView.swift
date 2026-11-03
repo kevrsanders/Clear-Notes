@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 import UIKit
 
@@ -21,6 +22,8 @@ struct RecordingView: View {
     @State private var errorMessage: String?
     @State private var confirmDiscard = false
     @State private var isFinishing = false
+    @State private var showLastTime = false
+    @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
     @FocusState private var notesFocused: Bool
 
     private var isRecording: Bool { recorder.state == .recording }
@@ -82,6 +85,14 @@ struct RecordingView: View {
         .task { await start() }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .sheet(isPresented: $showLastTime) {
+            if let previousMeeting {
+                LastTimeView(meeting: previousMeeting)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(32)
+            }
+        }
         .confirmationDialog("Discard this meeting?", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("Discard", role: .destructive) {
                 recorder.discard()
@@ -127,6 +138,17 @@ struct RecordingView: View {
         .padding(.top, 8)
     }
 
+    /// The last meeting in the linked meeting's series, if one was recorded.
+    private var previousMeeting: Meeting? {
+        guard let calendarMeeting else { return nil }
+        return MeetingSeries.previous(
+            seriesID: calendarMeeting.seriesID,
+            title: calendarMeeting.title,
+            before: calendarMeeting.start,
+            in: meetings
+        )
+    }
+
     /// "Weekly check-in · 10:00–11:00 · 5 invited", with a button to unlink a wrong match.
     private func linkedMeeting(_ meeting: CalendarMeeting) -> some View {
         HStack(spacing: 10) {
@@ -144,6 +166,20 @@ struct RecordingView: View {
                     .foregroundStyle(.white.opacity(0.5))
             }
             Spacer(minLength: 0)
+            if previousMeeting != nil {
+                Button {
+                    showLastTime = true
+                } label: {
+                    Label("Last time", systemImage: "clock.arrow.circlepath")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                        .background(.white.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows the summary and actions from the last meeting in this series")
+            }
             Button {
                 withAnimation { calendarMeeting = nil }
             } label: {

@@ -103,6 +103,8 @@ final class Meeting {
     var attendees: [String] = []
     /// Moments the user marked as actions or decisions while recording.
     var marks: [MeetingMark] = []
+    /// The repeating calendar meeting this recording belongs to, for showing "Last time".
+    var seriesID: String?
     /// The Teams join link from the invite, kept for importing the Teams transcript later.
     var teamsJoinURL: String?
 
@@ -157,6 +159,7 @@ final class Meeting {
         if !event.title.isEmpty { title = event.title }
         attendees = event.attendees
         teamsJoinURL = event.teamsJoinURL?.absoluteString
+        seriesID = event.seriesID
     }
 
     // MARK: - Recording

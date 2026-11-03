@@ -22,6 +22,12 @@ struct MeetingDetailView: View {
     @State private var playback = AudioPlayback()
     @State private var confirmDeleteAudio = false
     @State private var choosingSpeakerCount = false
+    @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
+
+    /// The last meeting in this meeting's series, for the Last time card.
+    private var previousMeeting: Meeting? {
+        MeetingSeries.previous(seriesID: meeting.seriesID, title: meeting.title, before: meeting.createdAt, in: allMeetings)
+    }
 
     /// The transcript line being played, for highlighting.
     private var playingSegment: UUID? {
@@ -393,6 +399,9 @@ struct MeetingDetailView: View {
             }
 
             document
+            if let previousMeeting {
+                lastTimeCard(previousMeeting)
+            }
             followUps
 
             if !toReview.isEmpty {
@@ -481,6 +490,38 @@ struct MeetingDetailView: View {
                         .foregroundStyle(Theme.textTertiary)
                 }
             }
+        }
+        .cardStyle(padding: 22)
+    }
+
+    /// The previous meeting in the series: a short summary, the actions it left open, and a link.
+    private func lastTimeCard(_ previous: Meeting) -> some View {
+        let points = NotesText.bullets(from: previous.summary).prefix(3)
+        let open = previous.actions
+            .filter { $0.status == .open }
+            .sorted { $0.createdAt < $1.createdAt }
+        return VStack(alignment: .leading, spacing: 14) {
+            CardHeader(title: "Last time · " + LastTime.dateText(previous.createdAt), systemImage: "clock.arrow.circlepath")
+            if !points.isEmpty {
+                BulletList(text: points.map { "- \($0)" }.joined(separator: "\n"))
+            }
+            if !open.isEmpty {
+                Text(open.count == 1 ? "1 action still open from last time" : "\(open.count) actions still open from last time")
+                    .font(.subheadline.weight(.semibold))
+                ForEach(open) { action in
+                    ActionCard(action: action)
+                }
+            } else if !previous.actions.isEmpty {
+                Label("Every action from last time is done.", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.success)
+            }
+            NavigationLink(value: previous) {
+                Label("Open last meeting", systemImage: "arrow.right.circle")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.brand)
+            }
+            .buttonStyle(.plain)
         }
         .cardStyle(padding: 22)
     }
@@ -776,7 +817,7 @@ struct MeetingDetailView: View {
 }
 
 /// Renders "- " lines as bullets and anything else as paragraphs.
-private struct BulletList: View {
+struct BulletList: View {
     var text: String
 
     private var lines: [String] {
