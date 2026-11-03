@@ -16,6 +16,8 @@ struct CalendarMeeting: Equatable, Identifiable, Sendable {
     var calendarID = ""
     /// The calendar's name, when it isn't the user's main calendar, e.g. "Family".
     var calendarName: String?
+    /// Shared by every occurrence of a repeating meeting, so earlier ones can be found.
+    var seriesID: String?
 
     /// Someone else is invited, so it's a meeting rather than a block like "WFH" or "Focus time".
     var hasPeople: Bool { !attendees.isEmpty }
@@ -280,7 +282,10 @@ extension CalendarMeeting {
             calendarID: event.calendar?.calendarIdentifier ?? "",
             calendarName: event.calendar.flatMap {
                 $0.calendarIdentifier == mainCalendarID ? nil : CalendarChoice.displayName($0.title)
-            }
+            },
+            seriesID: event.hasRecurrenceRules || event.isDetached
+                ? (event.eventIdentifier ?? event.calendarItemIdentifier)
+                : nil
         )
     }
 

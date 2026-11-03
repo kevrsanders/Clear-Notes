@@ -78,6 +78,27 @@ final class RecorderLogicTests: XCTestCase {
         XCTAssertGreaterThan(gain.gain, 2.5)
         XCTAssertLessThanOrEqual(gain.gain, AutomaticGain.maximumGain)
     }
+
+    /// The gain glides across a buffer instead of jumping at its start, which would click.
+    func testGainChangesSmoothlyAcrossABuffer() throws {
+        let gain = AutomaticGain()
+        let speech = try buffer(level: 0.03)
+        gain.apply(to: speech)
+        let samples = try XCTUnwrap(speech.floatChannelData?[0])
+        XCTAssertGreaterThan(gain.gain, 1.1)
+        XCTAssertEqual(samples[0], 0.03, accuracy: 0.0001, "Starts at the previous gain")
+        XCTAssertEqual(samples[1599], -0.03 * gain.gain, accuracy: 0.001, "Ends at the new gain")
+    }
+
+    /// Copies have their own memory, so the engine reusing its buffer can't change them.
+    func testCopiedBuffersAreIndependent() throws {
+        let original = try buffer(level: 0.2)
+        let copy = try XCTUnwrap(original.copied())
+        XCTAssertEqual(copy.frameLength, original.frameLength)
+        original.floatChannelData?[0][0] = 0.9
+        XCTAssertEqual(copy.floatChannelData?[0][0], 0.2)
+        XCTAssertEqual(copy.floatChannelData?[0][1599], -0.2)
+    }
 }
 
 final class AudioRetentionTests: XCTestCase {

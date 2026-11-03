@@ -138,3 +138,62 @@ enum SpeakerAssigner {
         return speaker(at: (start + end) / 2, turns: turns)
     }
 }
+
+/// Keeps speaker names when voices are regrouped, e.g. after "Wrong number of speakers?".
+enum SpeakerNames {
+    /// Each new speaker takes the name of the named old speaker whose lines it mostly covers (at
+    /// least half of its talk time), one to one, best match first. Speakers that don't match an
+    /// old one stay unnamed.
+    static func carry(
+        from oldSegments: [TranscriptSegment],
+        oldSpeakers: [Speaker],
+        to newSegments: [TranscriptSegment],
+        newSpeakers: [Speaker]
+    ) -> [Speaker] {
+        var named: [String: Speaker] = [:]
+        for speaker in oldSpeakers where speaker.name != nil {
+            named[speaker.id] = speaker
+        }
+        guard !named.isEmpty else { return newSpeakers }
+
+        // Seconds each new speaker shares with each named old speaker, and each new speaker's talk time.
+        var shared: [String: [String: TimeInterval]] = [:]
+        var talk: [String: TimeInterval] = [:]
+        for new in newSegments {
+            guard let newID = new.speakerID else { continue }
+            talk[newID, default: 0] += max(0, new.end - new.start)
+            for old in oldSegments {
+                guard let oldID = old.speakerID, named[oldID] != nil else { continue }
+                let overlap = min(new.end, old.end) - max(new.start, old.start)
+                if overlap > 0 {
+                    shared[newID, default: [:]][oldID, default: 0] += overlap
+                }
+            }
+        }
+
+        var pairs: [(newID: String, oldID: String, seconds: TimeInterval)] = []
+        for (newID, byOld) in shared {
+            for (oldID, seconds) in byOld {
+                pairs.append((newID: newID, oldID: oldID, seconds: seconds))
+            }
+        }
+        pairs.sort { $0.seconds > $1.seconds }
+
+        var taken = Set<String>()
+        var assignments: [String: Speaker] = [:]
+        for pair in pairs where assignments[pair.newID] == nil && !taken.contains(pair.oldID) {
+            guard let total = talk[pair.newID], total > 0, pair.seconds / total >= 0.5,
+                  let old = named[pair.oldID] else { continue }
+            assignments[pair.newID] = old
+            taken.insert(pair.oldID)
+        }
+
+        return newSpeakers.map { speaker in
+            guard let old = assignments[speaker.id] else { return speaker }
+            var speaker = speaker
+            speaker.name = old.name
+            speaker.matchedProfileID = old.matchedProfileID
+            return speaker
+        }
+    }
+}

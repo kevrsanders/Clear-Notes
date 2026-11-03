@@ -44,3 +44,43 @@ final class SpeakerEditingTests: XCTestCase {
         XCTAssertEqual(meeting.segments.map(\.speakerID), ["S1", "S1"])
     }
 }
+
+final class SpeakerNamesTests: XCTestCase {
+    func testNamesFollowTheVoicesThatMatch() {
+        let old = [
+            TranscriptSegment(start: 0, end: 10, text: "a", speakerID: "S1"),
+            TranscriptSegment(start: 10, end: 14, text: "b", speakerID: "S2"),
+            TranscriptSegment(start: 14, end: 30, text: "c", speakerID: "S1"),
+        ]
+        let oldSpeakers = [
+            Speaker(id: "S1", number: 1, name: "Priya"),
+            Speaker(id: "S2", number: 2, name: "Tom"),
+        ]
+        // Regrouped into three voices: A is Priya, B is Tom, C is a new voice split off from Priya's lines.
+        let new = [
+            TranscriptSegment(start: 0, end: 10, text: "a", speakerID: "A"),
+            TranscriptSegment(start: 10, end: 14, text: "b", speakerID: "B"),
+            TranscriptSegment(start: 14, end: 20, text: "c", speakerID: "A"),
+            TranscriptSegment(start: 20, end: 30, text: "d", speakerID: "C"),
+        ]
+        let newSpeakers = [
+            Speaker(id: "A", number: 1),
+            Speaker(id: "B", number: 2),
+            Speaker(id: "C", number: 3),
+        ]
+
+        let renamed = SpeakerNames.carry(from: old, oldSpeakers: oldSpeakers, to: new, newSpeakers: newSpeakers)
+
+        XCTAssertEqual(renamed.map(\.name), ["Priya", "Tom", nil], "Each name is used once, by the best match")
+    }
+
+    func testUnnamedSpeakersCarryNothing() {
+        let old = [TranscriptSegment(start: 0, end: 10, text: "a", speakerID: "S1")]
+        let new = [TranscriptSegment(start: 0, end: 10, text: "a", speakerID: "A")]
+        let renamed = SpeakerNames.carry(
+            from: old, oldSpeakers: [Speaker(id: "S1", number: 1)],
+            to: new, newSpeakers: [Speaker(id: "A", number: 1)]
+        )
+        XCTAssertNil(renamed.first?.name)
+    }
+}

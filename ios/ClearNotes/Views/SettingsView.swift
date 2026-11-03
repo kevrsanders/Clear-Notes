@@ -14,6 +14,10 @@ enum SettingsKeys {
     static let rememberVoices = "rememberVoices"
     static let useCalendar = "useCalendar"
     static let calendarChoices = "calendarChoices"
+    static let actionSuggestions = "actionSuggestions"
+    static let accurateTranscripts = "accurateTranscripts"
+    static let accurateModelsReady = "accurateModelsReady"
+    static let customVocabulary = "customVocabulary"
 }
 
 struct SettingsView: View {
@@ -26,6 +30,12 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
     @AppStorage(SettingsKeys.rememberVoices) private var rememberVoices = false
     @AppStorage(SettingsKeys.useCalendar) private var useCalendar = false
+    @AppStorage(SettingsKeys.actionSuggestions) private var actionSuggestions = ActionSuggestions.default.rawValue
+    @AppStorage(SettingsKeys.accurateTranscripts) private var accurateTranscripts = false
+    @AppStorage(SettingsKeys.accurateModelsReady) private var accurateModelsReady = false
+    @AppStorage(SettingsKeys.customVocabulary) private var customVocabulary = ""
+    @State private var isDownloadingTranscriber = false
+    @State private var transcriberError: String?
     @State private var calendarBlocked = CalendarReader.isBlocked
     @Query private var voices: [VoiceProfile]
     @State private var isDownloading = false
@@ -61,6 +71,61 @@ struct SettingsView: View {
                         toggle("Transcribe on this iPhone only", systemImage: "lock.iphone", isOn: $requireOnDevice)
                         Divider()
                         toggle("Remind me to tell attendees", systemImage: "person.wave.2", isOn: $showConsentReminder)
+                    }
+
+                    section("Transcription", footer: "More accurate transcripts: after each meeting, the recording is transcribed again on this iPhone with NVIDIA's Parakeet model, which is more accurate than the live transcript, and the live one is replaced. It's a one-off download of about 450 MB; turning it off deletes it. My words: names and terms to spell correctly, such as colleagues' names and acronyms. People invited to the meeting are included automatically.") {
+                        Toggle(isOn: accurateToggle) {
+                            Label {
+                                Text("More accurate transcripts")
+                            } icon: {
+                                Image(systemName: "text.badge.checkmark")
+                                    .foregroundStyle(Theme.brand)
+                            }
+                        }
+                        .tint(Theme.brand)
+                        .disabled(!AccurateTranscriber.isSupported || isDownloadingTranscriber)
+                        if accurateTranscripts || isDownloadingTranscriber || transcriberError != nil {
+                            HStack(spacing: 10) {
+                                if isDownloadingTranscriber {
+                                    ProgressView()
+                                }
+                                Text(transcriberStatus)
+                                    .font(.footnote)
+                                    .foregroundStyle(transcriberError == nil ? Theme.textSecondary : Theme.warning)
+                            }
+                        }
+                        Divider()
+                        NavigationLink {
+                            VocabularyView()
+                        } label: {
+                            HStack {
+                                Label {
+                                    Text("My words")
+                                } icon: {
+                                    Image(systemName: "character.book.closed")
+                                        .foregroundStyle(Theme.brand)
+                                }
+                                Spacer()
+                                Text("\(Vocabulary.terms(from: customVocabulary).count)")
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                        }
+                    }
+
+                    section("Actions", footer: (ActionSuggestions(rawValue: actionSuggestions) ?? .default).explanation + " While recording, tap Mark action or Mark decision just after one is agreed, or say \"action point\" or \"decision point\". Marked moments become open actions and decisions after the meeting.") {
+                        Picker(selection: $actionSuggestions) {
+                            ForEach(ActionSuggestions.allCases) { option in
+                                Text(option.title).tag(option.rawValue)
+                            }
+                        } label: {
+                            Label {
+                                Text("Suggest actions")
+                            } icon: {
+                                Image(systemName: "checklist")
+                                    .foregroundStyle(Theme.brand)
+                            }
+                        }
+                        .tint(Theme.brand)
                     }
 
                     section("Calendar", footer: "Reads today's events from your main calendar, and from any others you turn on in Choose calendars. Colleagues' shared calendars stay off unless you turn them on. Meetings with other people invited come before blocks like WFH or Focus time. Recordings take the meeting's title, invited people are suggested when naming speakers and action owners, and the Teams link is kept for later. Only the title, invited names and Teams link are saved with each meeting. Nothing is sent anywhere.") {
@@ -173,6 +238,38 @@ struct SettingsView: View {
                 // Access may have been removed in iOS Settings since it was turned on.
                 if useCalendar && !CalendarReader.hasAccess && CalendarReader.hasAnswered {
                     useCalendar = false
+                }
+            }
+        }
+    }
+
+    private var transcriberStatus: String {
+        if let transcriberError { return transcriberError }
+        if isDownloadingTranscriber { return "Downloading about 450 MB. Keep Clear Notes open; Wi-Fi recommended." }
+        return accurateModelsReady ? "Ready on this iPhone" : "Not downloaded yet"
+    }
+
+    /// Turning it on downloads the model; turning it off deletes it to free the space.
+    private var accurateToggle: Binding<Bool> {
+        Binding {
+            accurateTranscripts
+        } set: { isOn in
+            transcriberError = nil
+            accurateTranscripts = isOn
+            Task { @MainActor in
+                if isOn {
+                    isDownloadingTranscriber = true
+                    do {
+                        try await AccurateTranscriber.shared.prepare()
+                        accurateModelsReady = true
+                    } catch {
+                        accurateTranscripts = false
+                        transcriberError = "Download failed. Check your connection and try again."
+                    }
+                    isDownloadingTranscriber = false
+                } else {
+                    await AccurateTranscriber.shared.removeModels()
+                    accurateModelsReady = false
                 }
             }
         }

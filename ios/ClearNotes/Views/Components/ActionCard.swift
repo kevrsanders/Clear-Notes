@@ -6,6 +6,8 @@ struct ActionCard: View {
     var onShowSource: (() -> Void)?
     /// When set, a footer row names the meeting and opens it.
     var onOpenMeeting: (() -> Void)?
+    /// When set, the action can be turned into a decision, for one that was really something agreed.
+    var onMakeDecision: (() -> Void)?
 
     /// The speaker whose name matches the owner, so the owner uses their colour.
     private var ownerSpeaker: Speaker? {
@@ -29,7 +31,7 @@ struct ActionCard: View {
             }
 
             if action.status == .suggested {
-                HStack(spacing: 8) {
+                FlowLayout(spacing: 8) {
                     Button {
                         withAnimation(.snappy) { action.status = .open }
                     } label: {
@@ -43,6 +45,16 @@ struct ActionCard: View {
                         Label("Dismiss", systemImage: "xmark")
                     }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
+
+                    if let onMakeDecision {
+                        Button {
+                            withAnimation(.snappy) { onMakeDecision() }
+                        } label: {
+                            Label("Decision", systemImage: "signpost.right")
+                        }
+                        .buttonStyle(SecondaryButtonStyle(compact: true))
+                        .accessibilityLabel("It's a decision, not an action")
+                    }
                 }
                 .padding(.leading, 44)
             }
@@ -67,6 +79,15 @@ struct ActionCard: View {
             }
         }
         .cardStyle(padding: 16)
+        .contextMenu {
+            if let onMakeDecision {
+                Button {
+                    withAnimation(.snappy) { onMakeDecision() }
+                } label: {
+                    Label("Make it a decision", systemImage: "signpost.right")
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -100,8 +121,12 @@ struct ActionCard: View {
 
     @ViewBuilder
     private var details: some View {
-        if action.owner != nil || action.due != nil || onShowSource != nil {
+        if action.owner != nil || action.due != nil || onShowSource != nil || action.markID != nil {
             FlowLayout(spacing: 6) {
+                if action.markID != nil {
+                    Chip(text: "Marked", systemImage: "hand.tap.fill", tint: Theme.success)
+                        .accessibilityLabel("You marked this while recording")
+                }
                 if let owner = action.owner {
                     ownerChip(owner)
                 }

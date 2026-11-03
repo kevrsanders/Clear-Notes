@@ -18,6 +18,8 @@ final class ActionItem {
     var createdAt: Date
     /// The transcript segment that supports this action, so the user can check it.
     var sourceSegmentID: UUID?
+    /// The mark this action was written from, so regenerating the notes doesn't add it twice.
+    var markID: UUID?
     var meeting: Meeting?
 
     init(

@@ -22,6 +22,15 @@ struct MeetingDetailView: View {
     @State private var playback = AudioPlayback()
     @State private var confirmDeleteAudio = false
     @State private var choosingSpeakerCount = false
+    @State private var confirmImproveTranscript = false
+    @State private var improveFailed = false
+    @State private var editingSegment: TranscriptSegment?
+    @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
+
+    /// The last meeting in this meeting's series, for the Last time card.
+    private var previousMeeting: Meeting? {
+        MeetingSeries.previous(seriesID: meeting.seriesID, title: meeting.title, before: meeting.createdAt, in: allMeetings)
+    }
 
     /// The transcript line being played, for highlighting.
     private var playingSegment: UUID? {
@@ -102,7 +111,29 @@ struct MeetingDetailView: View {
                 }
             }
         } message: {
-            Text("Clear Notes listens to the recording again and regroups the voices. Speaker names will need adding again.")
+            Text("Clear Notes listens to the recording again and regroups the voices. Names are kept where a voice matches one you've named; any new voices need naming.")
+        }
+        .confirmationDialog("Improve the transcript?", isPresented: $confirmImproveTranscript, titleVisibility: .visible) {
+            Button("Improve transcript") {
+                Task {
+                    let improved = await MeetingProcessor.improveTranscript(of: meeting)
+                    if !improved { improveFailed = true }
+                }
+            }
+        } message: {
+            Text("Transcribes the recording again with the more accurate model on this iPhone. Speaker names are kept; any lines you edited are replaced.")
+        }
+        .alert("The transcript couldn't be improved", isPresented: $improveFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The live transcript has been kept. Check the recording is still on this iPhone and try again later.")
+        }
+        .sheet(item: $editingSegment) { segment in
+            LineEditor(text: segment.text) { newText in
+                meeting.editSegmentText(segment.id, to: newText)
+            }
+            .presentationDetents([.medium])
+            .presentationCornerRadius(32)
         }
         .confirmationDialog("Delete the recording?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
             Button("Delete recording", role: .destructive) {
@@ -199,6 +230,14 @@ struct MeetingDetailView: View {
                     Label("Regenerate notes", systemImage: "sparkles")
                 }
                 .disabled(meeting.processingState == .processing)
+                if AccurateTranscriber.isReady && meeting.playableAudioURL != nil {
+                    Button {
+                        confirmImproveTranscript = true
+                    } label: {
+                        Label("Improve transcript", systemImage: "text.badge.checkmark")
+                    }
+                    .disabled(meeting.processingState == .processing)
+                }
                 Divider()
                 if meeting.audioFileName != nil {
                     Button(role: .destructive) {
@@ -295,7 +334,7 @@ struct MeetingDetailView: View {
 
         if meeting.notesNeedRefresh {
             HStack(spacing: 12) {
-                Text("Speaker names changed. Refresh the notes to use them.")
+                Text("The transcript or speaker names changed. Refresh the notes to use them.")
                     .font(.subheadline)
                 Spacer(minLength: 0)
                 Button("Refresh") {
@@ -376,7 +415,26 @@ struct MeetingDetailView: View {
                 .cardStyle()
             }
 
+            if meeting.processingState == .ready, let caveat = meeting.notesCaveat {
+                VStack(alignment: .leading, spacing: 12) {
+                    CardHeader(title: "About these notes", systemImage: "info.circle.fill", tint: Theme.warning)
+                    Text(caveat)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if NotesEnhancers.isAppleIntelligenceAvailable {
+                        Button("Try Apple Intelligence again") {
+                            Task { await MeetingProcessor.process(meeting) }
+                        }
+                        .buttonStyle(SecondaryButtonStyle(compact: true))
+                    }
+                }
+                .cardStyle()
+            }
+
             document
+            if let previousMeeting {
+                lastTimeCard(previousMeeting)
+            }
             followUps
 
             if !toReview.isEmpty {
@@ -449,10 +507,54 @@ struct MeetingDetailView: View {
                                 .background(Theme.success, in: Circle())
                             Text(decision)
                                 .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            Button {
+                                withAnimation(.snappy) { meeting.makeAction(fromDecisionAt: index) }
+                            } label: {
+                                Label("Make it an action", systemImage: "checklist")
+                            }
                         }
                     }
+                    Text("Hold a decision to make it an action.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textTertiary)
                 }
             }
+        }
+        .cardStyle(padding: 22)
+    }
+
+    /// The previous meeting in the series: a short summary, the actions it left open, and a link.
+    private func lastTimeCard(_ previous: Meeting) -> some View {
+        let points = NotesText.bullets(from: previous.summary).prefix(3)
+        let open = previous.actions
+            .filter { $0.status == .open }
+            .sorted { $0.createdAt < $1.createdAt }
+        return VStack(alignment: .leading, spacing: 14) {
+            CardHeader(title: "Last time · " + LastTime.dateText(previous.createdAt), systemImage: "clock.arrow.circlepath")
+            if !points.isEmpty {
+                BulletList(text: points.map { "- \($0)" }.joined(separator: "\n"))
+            }
+            if !open.isEmpty {
+                Text(open.count == 1 ? "1 action still open from last time" : "\(open.count) actions still open from last time")
+                    .font(.subheadline.weight(.semibold))
+                ForEach(open) { action in
+                    ActionCard(action: action)
+                }
+            } else if !previous.actions.isEmpty {
+                Label("Every action from last time is done.", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.success)
+            }
+            NavigationLink(value: previous) {
+                Label("Open last meeting", systemImage: "arrow.right.circle")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.brand)
+            }
+            .buttonStyle(.plain)
         }
         .cardStyle(padding: 22)
     }
@@ -536,7 +638,11 @@ struct MeetingDetailView: View {
             Eyebrow(title)
                 .padding(.top, 6)
             ForEach(items) { action in
-                ActionCard(action: action, onShowSource: sourceHandler(for: action))
+                ActionCard(
+                    action: action,
+                    onShowSource: sourceHandler(for: action),
+                    onMakeDecision: { meeting.makeDecision(from: action) }
+                )
             }
         }
     }
@@ -612,6 +718,7 @@ struct MeetingDetailView: View {
                         let speaker = meeting.addSpeaker()
                         meeting.reassignSegment(segmentID, to: speaker.id)
                     },
+                    onEdit: { editingSegment = $0 },
                     onPlay: playHandler
                 )
                 .id("\(turn.id)-\(revision)")
@@ -631,6 +738,7 @@ struct MeetingDetailView: View {
         var onName: (Speaker) -> Void
         var onReassign: (UUID, String) -> Void
         var onNewSpeaker: (UUID) -> Void
+        var onEdit: (TranscriptSegment) -> Void
         /// Plays the recording between two times, when the recording is kept.
         var onPlay: ((TimeInterval, TimeInterval?) -> Void)?
 
@@ -712,6 +820,11 @@ struct MeetingDetailView: View {
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
+                Button {
+                    onEdit(segment)
+                } label: {
+                    Label("Edit text", systemImage: "pencil")
+                }
                 if !allSpeakers.isEmpty {
                     Menu {
                         ForEach(allSpeakers.filter { $0.id != segment.speakerID }) { option in
@@ -744,7 +857,7 @@ struct MeetingDetailView: View {
 }
 
 /// Renders "- " lines as bullets and anything else as paragraphs.
-private struct BulletList: View {
+struct BulletList: View {
     var text: String
 
     private var lines: [String] {
@@ -785,9 +898,13 @@ private struct ProcessingCard: View {
     private var showsSpeakerStep: Bool {
         stage == .speakers || !meeting.speakers.isEmpty || meeting.speakerNote != nil
     }
+    private var showsTranscriptStep: Bool {
+        stage == .transcript || meeting.transcriptImproved
+    }
     private var progress: Double {
         switch stage {
-        case .speakers: 0.4
+        case .transcript: 0.25
+        case .speakers: 0.45
         case .notes: 0.75
         case nil: 0.15
         }
@@ -804,6 +921,13 @@ private struct ProcessingCard: View {
                     .tint(Theme.brand)
                     .animation(.easeInOut, value: progress)
                 step("Transcribed", detail: "\(meeting.duration.durationString) · \(wordCount) words", state: .done)
+                if showsTranscriptStep {
+                    step(
+                        "Improving the transcript",
+                        detail: "A second, more accurate pass on this iPhone",
+                        state: stage == .transcript ? .active : .done
+                    )
+                }
                 if showsSpeakerStep {
                     step("Identifying speakers", detail: "Separating voices on this iPhone", state: stage == .speakers ? .active : .done)
                 }
@@ -948,5 +1072,40 @@ private struct PlayerBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .glass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+}
+
+/// Corrects the words of one transcript line.
+private struct LineEditor: View {
+    @State var text: String
+    var onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: $text)
+                .focused($focused)
+                .scrollContentBackground(.hidden)
+                .padding(12)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+                .padding(Theme.gutter)
+                .background(Theme.background)
+                .navigationTitle("Edit line")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            onSave(text)
+                            dismiss()
+                        }
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .onAppear { focused = true }
+        }
     }
 }
