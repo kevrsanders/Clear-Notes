@@ -112,6 +112,11 @@ final class Meeting {
     /// How many people spoke, when the user said so (on the recording screen or with "Wrong number
     /// of speakers?"). Nil means the number of voices is worked out from the recording.
     var expectedSpeakers: Int?
+    /// Formal minutes (the Minutes tab), written when the user asks, as plain text they can edit.
+    var minutes: String = ""
+    /// How the minutes were written, e.g. by Apple Intelligence on this iPhone.
+    var minutesSource: String?
+    var minutesWrittenAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []

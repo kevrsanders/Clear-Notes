@@ -33,6 +33,8 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
     - If Apple Intelligence can't finish at all, you get basic notes. *About these notes* says why and offers *Try Apple Intelligence again*.
   - On other iPhones, a rules-based extractor finds commitments ("Priya will send… by Friday"), decisions ("we agreed…") and lines you marked in your notes.
 - **Notes that read like a page**: summary, **topics with time ranges** (tap one to jump to that point in the transcript) and decisions on one surface.
+- **Lock Screen controls while recording**: the Lock Screen and Dynamic Island show the recording timer with **Pause**/**Resume**, **Action** and **Decision** buttons, so you can mark moments without unlocking. It shows no meeting title or names, because anyone nearby can see the Lock Screen. While paused nothing is recorded or transcribed, but the microphone stays open (the orange dot stays on), because iOS doesn't let an app in the background start the microphone again. If a phone call takes the microphone, open Clear Notes to resume. Live Activities can be turned off in iOS Settings → Clear Notes.
+- **Minutes** (Minutes tab): formal minutes written the way a minute-taker would. They have the title, date and time, who was present (named speakers), and a numbered item for each part of the meeting, written in the third person, past tense and reported speech ("Priya reported that…", "Concerns were raised about…"). Each item lists what was agreed and the actions under the part of the meeting where they came up, and a summary of actions comes at the end. Speakers who aren't named aren't attributed ("It was noted that…"). They're written on request on this iPhone (Apple Intelligence in its mode for transforming text you supply, or the meeting's key points without it). They're plain text, so they paste cleanly into an email, Word or Teams, and you can edit, copy and share them. Only accepted actions are included.
 - **One-tap follow-ups**: *List actions*, *Write follow-up email* and *Draft project plan*. Drafts are built only from the meeting's own notes and accepted actions. On iPhones with Apple Intelligence they're rewritten into natural prose on the device, with an instruction to keep every fact. They're editable, with Copy and Share.
 - **Talk time**: each speaker's share of the conversation, as percentages and a coloured bar.
 - **Action review**: AI suggestions arrive as *To review*, and you accept or dismiss each one. Every action links back to the transcript line it came from (**Source**).
@@ -86,9 +88,13 @@ ios/
 │   │   ├── AppleIntelligenceEnhancer   Foundation Models (iOS 26+)
 │   │   ├── HeuristicEnhancer    Rules-based fallback
 │   │   ├── MeetingProcessor     Speakers, then notes; resumes after relaunch; keeps reviewed actions
+│   │   ├── MinutesWriter        Formal minutes in reported speech, built from topics, decisions and actions
+│   │   ├── RecordingLiveActivity  Starts and updates the Lock Screen controls
 │   │   └── MarkdownExporter     Share or copy text
 │   └── Views/                   Home, Recording, Meeting detail, Speaker naming, Settings
 │       └── Components/          Design system: Theme, glass, PillTabs, Avatar, ActionCard…
+├── Shared/                      Lock Screen activity state and its button actions (app and extension)
+├── LiveActivity/                Lock Screen and Dynamic Island extension (WidgetKit)
 └── ClearNotesTests/             Unit tests for extraction, speaker splitting, formatting and source linking
 ```
 

@@ -11,7 +11,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.2.6"
+    MARKETING_VERSION: "0.2.7"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   ClearNotes:
@@ -19,8 +19,11 @@ targets:
     platform: iOS
     sources:
       - ClearNotes
+      - Shared
     dependencies:
       - package: FluidAudio
+      # The recording's Lock Screen and Dynamic Island controls.
+      - target: ClearNotesLiveActivity
     info:
       path: ClearNotes/Info.plist
       properties:
@@ -38,6 +41,7 @@ targets:
         NSCalendarsFullAccessUsageDescription: Clear Notes reads today's events so recordings take the meeting's title and invited people are suggested as speakers. Nothing is sent anywhere.
         NSSpeechRecognitionUsageDescription: Clear Notes turns speech into a written transcript on this iPhone.
         ITSAppUsesNonExemptEncryption: false
+        NSSupportsLiveActivities: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.clearnotes.app
@@ -45,6 +49,27 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
+  ClearNotesLiveActivity:
+    type: app-extension
+    platform: iOS
+    sources:
+      - LiveActivity
+      - Shared
+    info:
+      path: LiveActivity/Info.plist
+      properties:
+        CFBundleDisplayName: Clear Notes
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        # The build workflow swaps com.clearnotes.app for your bundle ID, so this becomes <your ID>.LiveActivity.
+        PRODUCT_BUNDLE_IDENTIFIER: com.clearnotes.app.LiveActivity
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        APPLICATION_EXTENSION_API_ONLY: YES
   ClearNotesTests:
     type: bundle.unit-test
     platform: iOS

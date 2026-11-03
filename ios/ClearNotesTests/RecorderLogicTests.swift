@@ -118,3 +118,34 @@ final class AudioRetentionTests: XCTestCase {
         XCTAssertEqual(AudioRetention.default, .oneWeek)
     }
 }
+
+final class LockScreenControlsTests: XCTestCase {
+    private let start = Date(timeIntervalSince1970: 1_793_000_000)
+
+    func testPausingStopsTheTimerAndResumingCountsOnlyRecordedTime() {
+        let recording = RecordingActivityAttributes.ContentState(timerStart: start)
+
+        let paused = RecordingLiveActivity.paused(recording, at: start.addingTimeInterval(90))
+        XCTAssertTrue(paused.isPaused)
+        XCTAssertEqual(paused.pausedAt, start.addingTimeInterval(90))
+
+        // Resumed five minutes later with 90 seconds recorded: the timer carries on from 1:30.
+        let resumeTime = start.addingTimeInterval(390)
+        let resumed = RecordingLiveActivity.resumed(paused, elapsed: 90, at: resumeTime)
+        XCTAssertFalse(resumed.isPaused)
+        XCTAssertEqual(resumeTime.timeIntervalSince(resumed.timerStart), 90)
+    }
+
+    func testMarksAreCountedAndConfirmed() {
+        var state = RecordingActivityAttributes.ContentState(timerStart: start)
+        XCTAssertNil(state.marksText)
+
+        state = RecordingLiveActivity.marked(state, kind: .action, at: 125)
+        XCTAssertEqual(state.note, "Action marked at 2:05")
+        state = RecordingLiveActivity.marked(state, kind: .action, at: 300)
+        state = RecordingLiveActivity.marked(state, kind: .decision, at: 310)
+
+        XCTAssertEqual(state.marksText, "2 actions · 1 decision marked")
+        XCTAssertNil(RecordingLiveActivity.paused(state).note, "The confirmation clears on pause")
+    }
+}

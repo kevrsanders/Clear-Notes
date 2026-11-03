@@ -4,7 +4,7 @@ import UIKit
 
 struct MeetingDetailView: View {
     enum Pane: Hashable {
-        case overview, actions, transcript, notes
+        case overview, minutes, actions, transcript, notes
     }
 
     @Bindable var meeting: Meeting
@@ -62,6 +62,7 @@ struct MeetingDetailView: View {
                         PillTabs<Pane>(
                             items: [
                                 .init(value: .overview, title: "Overview"),
+                                .init(value: .minutes, title: "Minutes"),
                                 .init(value: .actions, title: "Actions", badge: toReview.count),
                                 .init(value: .transcript, title: "Transcript"),
                                 .init(value: .notes, title: "Notes"),
@@ -70,6 +71,7 @@ struct MeetingDetailView: View {
                         )
                         switch pane {
                         case .overview: overviewPane
+                        case .minutes: MinutesPane(meeting: meeting)
                         case .actions: actionsPane
                         case .transcript: transcriptPane
                         case .notes: notesPane

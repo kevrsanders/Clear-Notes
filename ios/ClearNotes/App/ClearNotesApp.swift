@@ -24,7 +24,10 @@ struct ContentView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .tint(Theme.brand)
-        .task { await MeetingProcessor.resumeUnfinished(in: context) }
+        .task {
+            RecordingLiveActivity.endStale()
+            await MeetingProcessor.resumeUnfinished(in: context)
+        }
         .onChange(of: scenePhase) { _, phase in
             // Notes paused in the background (Apple Intelligence limits background apps) carry on.
             if phase == .active {

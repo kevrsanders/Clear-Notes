@@ -156,7 +156,7 @@ struct PillTabs<Value: Hashable>: View {
                     HStack(spacing: 5) {
                         Text(item.title)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                            .minimumScaleFactor(0.7)
                         if item.badge > 0 {
                             Text("\(item.badge)")
                                 .font(.caption2.weight(.bold))
