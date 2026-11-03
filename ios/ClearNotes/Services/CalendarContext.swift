@@ -43,8 +43,13 @@ enum CalendarMeetingPicker {
             .min { $0.start < $1.start }
     }
 
+    /// Timed entries this long are blocks such as "Working from home 09:00–17:00" or leave,
+    /// not meetings, so they're ignored like all-day events.
+    static let longestMeeting: TimeInterval = 6 * 3_600
+
     private static func usable(_ meeting: CalendarMeeting) -> Bool {
-        !meeting.isAllDay && !meeting.isCancelledOrDeclined && meeting.end > meeting.start
+        let length = meeting.end.timeIntervalSince(meeting.start)
+        return !meeting.isAllDay && !meeting.isCancelledOrDeclined && length > 0 && length < longestMeeting
     }
 }
 

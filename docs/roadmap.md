@@ -46,6 +46,7 @@ Phase 1 (done) is a private, on-device iPhone app: capture, transcription, speak
 - **Outlook app calendars** are private to the Outlook app. They reach EventKit in one of two ways:
   - **Outlook → Settings → your account → Sync Calendars.** This copies events to Apple's Calendar app. Expect titles and times, but probably not attendees, because iOS doesn't let apps like Outlook write attendee lists. An Intune app protection policy can block it ("Sync policy managed app data with native apps or add-ins").
   - **Adding the work account in iOS Settings** gives full events with attendees, but many organisations block the built-in iOS mail and calendar apps through Conditional Access.
+- **Calendars shared with you** (a colleague's or a team calendar) don't reach Apple's Calendar app through a work account added in iOS Settings. That connection is Exchange ActiveSync, which doesn't support shared or delegate access, so Clear Notes can't see them on the iPhone. Graph `Calendars.Read.Shared` can read them after sign-in. When it's added, let the user choose which calendars count, so a colleague's meetings don't show as "Up next".
 - **Microsoft Graph** `Calendars.Read`, after Microsoft sign-in, is the dependable route for work calendars. It gives full attendee details and the Teams join link that transcript import needs, and it works whatever the Outlook settings are.
 
 ---
@@ -116,6 +117,7 @@ A Teams app that lives inside meetings needs hosted components. Plan for a small
   | Outlook draft | `Mail.ReadWrite` | No* |
   | OneDrive / OneNote | `Files.ReadWrite`, `Notes.Create` | No* |
   | Calendar details | `Calendars.Read` (optional) | No* |
+  | Calendars shared with you | `Calendars.Read.Shared` (optional) | No* |
   | Teams transcripts | `OnlineMeetings.Read`, `OnlineMeetingTranscript.Read.All` | **Yes** |
 
   \*Not required by Microsoft, but many organisations turn off user consent. If yours has, the team grants consent for everyone once.

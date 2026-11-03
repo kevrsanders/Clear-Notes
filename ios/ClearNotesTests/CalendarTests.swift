@@ -51,6 +51,17 @@ final class CalendarMeetingPickerTests: XCTestCase {
         XCTAssertEqual(CalendarMeetingPicker.current(in: meetings, at: at(10, 25))?.title, "Huddle")
     }
 
+    func testDayLongTimedBlocksAreIgnoredLikeAllDayEvents() {
+        let meetings = [
+            event("Working from home", at(9), at(17)),
+            event("Leave", at(0), at(0, dayOffset: 2)),
+            event("Workshop", at(9), at(13)),
+        ]
+        XCTAssertEqual(CalendarMeetingPicker.current(in: meetings, at: at(9, 5))?.title, "Workshop")
+        XCTAssertNil(CalendarMeetingPicker.current(in: meetings, at: at(14)))
+        XCTAssertNil(CalendarMeetingPicker.next(in: [event("Training day", at(10), at(16, 30))], after: at(8), calendar: calendar))
+    }
+
     func testOverlappingMeetingsThatStartTogetherPreferTheOneWithPeople() {
         let meetings = [
             event("Focus time", at(14), at(15)),
