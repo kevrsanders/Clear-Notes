@@ -89,7 +89,8 @@ The app declares that it uses no non-exempt encryption (`ITSAppUsesNonExemptEncr
 | "No suitable application records were found" or "Error Downloading App Information" | The app wasn't created in App Store Connect (step 3), it uses a different bundle ID, or an agreement is waiting to be accepted in App Store Connect. Registering the identifier (step 2) doesn't create the app |
 | "Your account already has an Apple Development signing certificate for this machine…" | Fixed in the workflow (archives are now unsigned and signed at upload). Optionally revoke stray **Apple Development** certificates created by GitHub runners under Certificates at developer.apple.com |
 | Build or test failures | Open the failed run in **Actions** and share the error with Claude |
+| Every job fails within seconds, with no log | The account's Actions minutes or spending limit is used up. The run page says so at the top. Add a budget for Actions under your GitHub **Settings → Billing and licensing**, or wait for the monthly allowance to reset, then press **Re-run all jobs** on the latest run |
 
 ## Cost
 
-GitHub Actions bills Mac minutes at 10× the Linux rate on private repositories (the free plan includes 2,000 minutes a month, so about 200 Mac minutes). A test run takes about 10 minutes, a TestFlight run about 20. Public repositories are free. The workflow cancels older runs on the same branch to save minutes.
+GitHub Actions bills Mac minutes at 10× the Linux rate on private repositories (the free plan includes 2,000 minutes a month, so about 200 Mac minutes). A test run takes about 10 minutes, a TestFlight run about 20. That's roughly seven TestFlight builds a month on the free allowance. Public repositories are free. To save minutes, the workflow cancels older runs on the same branch, doesn't run a second copy for the pull request, and skips Markdown-only changes.

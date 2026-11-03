@@ -4,13 +4,15 @@ name: iOS
 # run by hand (Actions → iOS → Run workflow) or when a pushed commit message contains
 # "[testflight]". Setup: ios/TESTFLIGHT.md. Set the MACOS_RUNNER repository variable
 # (e.g. macos-26-intel) to use another runner when macos-26 is short of capacity.
+#
+# macOS minutes count ten times towards a private repository's Actions allowance, so:
+# - there is no separate pull_request run (push runs already show their checks on the PR), and
+# - Markdown-only changes under ios/ don't build.
 
 on:
   push:
     branches: [main, "claude/**"]
-    paths: ["ios/**", ".github/workflows/ios.yml"]
-  pull_request:
-    paths: ["ios/**", ".github/workflows/ios.yml"]
+    paths: ["ios/**", "!ios/**/*.md", ".github/workflows/ios.yml"]
   workflow_dispatch:
     inputs:
       testflight:
