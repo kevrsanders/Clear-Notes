@@ -68,18 +68,24 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         they are the owner of that action. Never invent names, dates or tasks. Write in plain British English.
         """
 
-    /// Why Apple Intelligence couldn't handle something, worded to follow "because".
+    /// Why Apple Intelligence couldn't handle something, worded to follow "because", with "it"
+    /// meaning Apple Intelligence.
     static func reason(for error: Error) -> String {
-        if (error as? NotesEnhancerError) == .busy { return "Apple Intelligence was busy" }
-        guard let error = error as? LanguageModelSession.GenerationError else { return error.localizedDescription }
-        switch error {
+        if (error as? NotesEnhancerError) == .busy { return "it was busy" }
+        guard let generationError = error as? LanguageModelSession.GenerationError else {
+            // E.g. "FoundationModels.LanguageModelError error -1": a generic system error.
+            let nsError = error as NSError
+            let name = nsError.domain.split(separator: ".").last.map(String.init) ?? nsError.domain
+            return "it hit an internal error on this iPhone (\(name) \(nsError.code))"
+        }
+        switch generationError {
         case .guardrailViolation: return "Apple's safety filter declined part of the conversation"
-        case .exceededContextWindowSize: return "part of the meeting was too long for the model"
-        case .rateLimited: return "Apple Intelligence was busy"
-        case .assetsUnavailable: return "Apple Intelligence wasn't ready on this iPhone"
+        case .exceededContextWindowSize: return "part of the meeting was too long for it"
+        case .rateLimited: return "it was busy"
+        case .assetsUnavailable: return "it wasn't ready on this iPhone"
         case .unsupportedLanguageOrLocale: return "the language isn't supported"
-        case .decodingFailure, .unsupportedGuide: return "the model's answer couldn't be read"
-        default: return error.localizedDescription
+        case .decodingFailure, .unsupportedGuide: return "its answer couldn't be read"
+        default: return generationError.localizedDescription
         }
     }
 
@@ -276,9 +282,11 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         return chosen
     }
 
-    /// One request to the model, retried with growing waits while the system is busy.
+    /// One request to the model, retried with growing waits while the system is busy, and once
+    /// after a generic system error, which is often temporary.
     private func generate<Content: Generable>(_ prompt: String, as type: Content.Type) async throws -> Content {
         var attempt = 0
+        var retriedSystemError = false
         while true {
             do {
                 let session = LanguageModelSession(instructions: Self.instructions)
@@ -288,6 +296,12 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
                 guard attempt < Self.busyRetryDelays.count else { throw NotesEnhancerError.busy }
                 try await Task.sleep(for: Self.busyRetryDelays[attempt])
                 attempt += 1
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard !retriedSystemError else { throw error }
+                retriedSystemError = true
+                try await Task.sleep(for: .seconds(2))
             }
         }
     }

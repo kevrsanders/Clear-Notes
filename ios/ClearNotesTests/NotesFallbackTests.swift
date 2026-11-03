@@ -43,6 +43,13 @@ final class NotesFallbackTests: XCTestCase {
         XCTAssertTrue(meeting.actions.contains { $0.text.contains("firewall change") })
     }
 
+    func testReasonsAreReadable() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Apple Intelligence reasons need iOS 26") }
+        let systemError = NSError(domain: "FoundationModels.LanguageModelError", code: -1)
+        XCTAssertEqual(NotesEnhancers.reason(for: systemError), "it hit an internal error on this iPhone (LanguageModelError -1)")
+        XCTAssertEqual(NotesEnhancers.reason(for: NotesEnhancerError.busy), "it was busy")
+    }
+
     func testSuccessfulNotesHaveNoCaveat() async throws {
         let meeting = try makeMeeting()
         meeting.notesCaveat = "Left over from an earlier attempt"
