@@ -70,6 +70,35 @@ final class CalendarMeetingPickerTests: XCTestCase {
         XCTAssertEqual(CalendarMeetingPicker.current(in: meetings, at: at(14, 2))?.title, "Check-in")
     }
 
+    func testMeetingsWithPeopleComeBeforeBlocks() {
+        let day = [
+            event("WFH", at(8), at(8, 30)),
+            event("Report writing", at(8, 15), at(8, 50)),
+            event("CAB", at(10), at(11), attendees: ["Alex Morgan"]),
+            event("Focus time", at(13), at(14)),
+        ]
+        let early = CalendarMeetingPicker.upNext(in: day, at: at(7, 13), calendar: calendar)
+        XCTAssertEqual(early?.event.title, "CAB")
+        XCTAssertEqual(early?.isNow, false)
+
+        // With no meeting left today, a block happening now is still offered.
+        let afternoon = CalendarMeetingPicker.upNext(in: day, at: at(13, 10), calendar: calendar)
+        XCTAssertEqual(afternoon?.event.title, "Focus time")
+        XCTAssertEqual(afternoon?.isNow, true)
+    }
+
+    func testABlockOnlyWinsWhenItStartsMuchNearer() {
+        let meetings = [
+            event("CAB", at(10), at(11), attendees: ["Alex Morgan"]),
+            event("Prep", at(10, 25), at(10, 40)),
+            event("Walk-round", at(10, 50), at(11, 30)),
+        ]
+        // A block starting in 5 minutes doesn't beat a meeting that started 20 minutes ago.
+        XCTAssertEqual(CalendarMeetingPicker.current(in: meetings, at: at(10, 20))?.title, "CAB")
+        // A block that started 2 minutes ago beats a meeting that's 52 minutes in.
+        XCTAssertEqual(CalendarMeetingPicker.current(in: meetings, at: at(10, 52))?.title, "Walk-round")
+    }
+
     func testNextIsLaterTheSameDay() {
         let meetings = backToBack + [event("Tomorrow", at(9, dayOffset: 1), at(10, dayOffset: 1))]
         XCTAssertEqual(CalendarMeetingPicker.next(in: meetings, after: at(10, 20), calendar: calendar)?.title, "Project")

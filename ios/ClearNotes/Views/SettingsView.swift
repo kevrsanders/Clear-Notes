@@ -13,6 +13,7 @@ enum SettingsKeys {
     static let reduceEchoAndNoise = "reduceEchoAndNoise"
     static let rememberVoices = "rememberVoices"
     static let useCalendar = "useCalendar"
+    static let hiddenCalendars = "hiddenCalendars"
 }
 
 struct SettingsView: View {
@@ -62,7 +63,7 @@ struct SettingsView: View {
                         toggle("Remind me to tell attendees", systemImage: "person.wave.2", isOn: $showConsentReminder)
                     }
 
-                    section("Calendar", footer: "Reads today's events from the calendars in Apple's Calendar app, including a work account added in iOS Settings. Recordings take the meeting's title, invited people are suggested when naming speakers and action owners, and the Teams link is kept for later. Only the title, invited names and Teams link are saved with each meeting. Nothing is sent anywhere.") {
+                    section("Calendar", footer: "Reads today's events from the calendars you choose, including a work account added in iOS Settings. Meetings with other people invited come before blocks like WFH or Focus time. Recordings take the meeting's title, invited people are suggested when naming speakers and action owners, and the Teams link is kept for later. Only the title, invited names and Teams link are saved with each meeting. Nothing is sent anywhere.") {
                         Toggle(isOn: calendarToggle) {
                             Label {
                                 Text("Use my calendar")
@@ -72,6 +73,14 @@ struct SettingsView: View {
                             }
                         }
                         .tint(Theme.brand)
+                        if useCalendar && CalendarReader.hasAccess {
+                            Divider()
+                            NavigationLink {
+                                CalendarsView()
+                            } label: {
+                                Text("Choose calendars")
+                            }
+                        }
                         if calendarBlocked {
                             Divider()
                             HStack(spacing: 12) {

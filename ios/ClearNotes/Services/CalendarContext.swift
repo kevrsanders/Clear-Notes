@@ -13,6 +13,12 @@ struct CalendarMeeting: Equatable, Identifiable, Sendable {
     /// Invited people's names, without the user, rooms or resources.
     var attendees: [String] = []
     var teamsJoinURL: URL?
+    var calendarID = ""
+    /// The calendar's name, when it isn't the user's main calendar, e.g. "Family".
+    var calendarName: String?
+
+    /// Someone else is invited, so it's a meeting rather than a block like "WFH" or "Focus time".
+    var hasPeople: Bool { !attendees.isEmpty }
 
     /// "10:00–11:00"
     var timeRange: String {
@@ -24,23 +30,39 @@ struct CalendarMeeting: Equatable, Identifiable, Sendable {
 enum CalendarMeetingPicker {
     /// The meeting happening at `date`: one in progress, or one starting within `lookahead`.
     /// When meetings overlap, the one that starts nearest to `date` wins, so starting a recording
-    /// just before a back-to-back meeting picks the next meeting, not the one ending.
+    /// just before a back-to-back meeting picks the next meeting, not the one ending. Blocks with
+    /// nobody else invited count as starting half an hour further away, so meetings win.
     static func current(in meetings: [CalendarMeeting], at date: Date, lookahead: TimeInterval = 10 * 60) -> CalendarMeeting? {
-        meetings
+        func distance(_ meeting: CalendarMeeting) -> TimeInterval {
+            abs(meeting.start.timeIntervalSince(date)) + (meeting.hasPeople ? 0 : 30 * 60)
+        }
+        return meetings
             .filter { usable($0) && $0.start <= date.addingTimeInterval(lookahead) && $0.end > date }
             .min { first, second in
-                let firstGap = abs(first.start.timeIntervalSince(date))
-                let secondGap = abs(second.start.timeIntervalSince(date))
-                if firstGap != secondGap { return firstGap < secondGap }
+                let firstDistance = distance(first)
+                let secondDistance = distance(second)
+                if firstDistance != secondDistance { return firstDistance < secondDistance }
                 return first.attendees.count > second.attendees.count
             }
     }
 
-    /// The next meeting later the same day, after any meeting happening now.
+    /// The next meeting with other people later the same day, or else the next event of any kind.
     static func next(in meetings: [CalendarMeeting], after date: Date, calendar: Calendar = .current) -> CalendarMeeting? {
-        meetings
+        let later = meetings
             .filter { usable($0) && $0.start > date && calendar.isDate($0.start, inSameDayAs: date) }
-            .min { $0.start < $1.start }
+            .sorted { $0.start < $1.start }
+        return later.first(where: \.hasPeople) ?? later.first
+    }
+
+    /// What the home screen offers to record: a meeting with people happening now, else the next
+    /// one today, else any event happening now or next.
+    static func upNext(in meetings: [CalendarMeeting], at date: Date, calendar: Calendar = .current) -> (event: CalendarMeeting, isNow: Bool)? {
+        let happening = current(in: meetings, at: date)
+        let coming = next(in: meetings, after: date, calendar: calendar)
+        if let happening, happening.hasPeople { return (happening, true) }
+        if let coming, coming.hasPeople { return (coming, false) }
+        if let happening { return (happening, true) }
+        return coming.map { ($0, false) }
     }
 
     /// Timed entries this long are blocks such as "Working from home 09:00–17:00" or leave,
@@ -166,14 +188,32 @@ final class CalendarReader {
         return granted
     }
 
-    /// Today's meetings around `date`, oldest first.
-    func meetingsToday(around date: Date = .now, calendar: Calendar = .current) -> [CalendarMeeting] {
+    /// Calendars the user has turned off in Settings → Calendar → Calendars.
+    static var hiddenCalendarIDs: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: SettingsKeys.hiddenCalendars) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue).sorted(), forKey: SettingsKeys.hiddenCalendars) }
+    }
+
+    /// Every event calendar on the iPhone except Birthdays, grouped by account in Settings.
+    func calendars() -> [EKCalendar] {
         guard Self.hasAccess else { return [] }
+        return store.calendars(for: .event)
+            .filter { $0.type != .birthday }
+            .sorted { ($0.source?.title ?? "", $0.title) < ($1.source?.title ?? "", $1.title) }
+    }
+
+    /// Today's events, oldest first, from the calendars the user hasn't turned off
+    /// (or from every calendar, for the Calendars list in Settings).
+    func meetingsToday(around date: Date = .now, calendar: Calendar = .current, includingHidden: Bool = false) -> [CalendarMeeting] {
+        let hidden = includingHidden ? [] : Self.hiddenCalendarIDs
+        let chosen = calendars().filter { !hidden.contains($0.calendarIdentifier) }
+        guard !chosen.isEmpty else { return [] }
         let dayStart = calendar.startOfDay(for: date)
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? date.addingTimeInterval(86_400)
-        let predicate = store.predicateForEvents(withStart: dayStart, end: dayEnd, calendars: nil)
+        let predicate = store.predicateForEvents(withStart: dayStart, end: dayEnd, calendars: chosen)
+        let mainCalendarID = store.defaultCalendarForNewEvents?.calendarIdentifier
         return store.events(matching: predicate)
-            .map(CalendarMeeting.init(event:))
+            .map { CalendarMeeting(event: $0, mainCalendarID: mainCalendarID) }
             .sorted { $0.start < $1.start }
     }
 
@@ -185,7 +225,7 @@ final class CalendarReader {
 }
 
 extension CalendarMeeting {
-    init(event: EKEvent) {
+    init(event: EKEvent, mainCalendarID: String? = nil) {
         let participants = ([event.organizer].compactMap { $0 }) + (event.attendees ?? [])
         let me = participants.first(where: \.isCurrentUser)
         var seen = Set<String>()
@@ -202,7 +242,9 @@ extension CalendarMeeting {
             isAllDay: event.isAllDay,
             isCancelledOrDeclined: event.status == .canceled || me?.participantStatus == .declined,
             attendees: people,
-            teamsJoinURL: TeamsLink.find(in: [event.url?.absoluteString, event.location, event.notes])
+            teamsJoinURL: TeamsLink.find(in: [event.url?.absoluteString, event.location, event.notes]),
+            calendarID: event.calendar?.calendarIdentifier ?? "",
+            calendarName: event.calendar.flatMap { $0.calendarIdentifier == mainCalendarID ? nil : $0.title }
         )
     }
 

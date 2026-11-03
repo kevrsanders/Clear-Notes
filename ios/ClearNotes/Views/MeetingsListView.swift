@@ -210,12 +210,10 @@ struct MeetingsListView: View {
 
     // MARK: - Calendar
 
-    /// The meeting happening now, or else the next one today.
+    /// The meeting happening now, or else the next one today. Meetings with people come before
+    /// blocks such as "WFH" or "Focus time".
     private var upNext: (event: CalendarMeeting, isNow: Bool)? {
-        if let now = CalendarMeetingPicker.current(in: todaysEvents, at: .now) {
-            return (now, true)
-        }
-        return CalendarMeetingPicker.next(in: todaysEvents, after: .now).map { ($0, false) }
+        CalendarMeetingPicker.upNext(in: todaysEvents, at: .now)
     }
 
     private func refreshCalendar() {
@@ -294,7 +292,7 @@ private struct UpNextCard: View {
                 Text(event.title.isEmpty ? "Calendar event" : event.title)
                     .font(.headline)
                     .lineLimit(2)
-                if !people.isEmpty || event.teamsJoinURL != nil {
+                if !people.isEmpty || event.teamsJoinURL != nil || event.calendarName != nil {
                     HStack(spacing: 8) {
                         if !people.isEmpty {
                             AvatarStack(speakers: people, size: 22, limit: 3)
@@ -305,6 +303,10 @@ private struct UpNextCard: View {
                         }
                         if event.teamsJoinURL != nil {
                             Chip(text: "Teams", systemImage: "video.fill", tint: Theme.brand)
+                        }
+                        if let calendarName = event.calendarName {
+                            // Shown when it isn't the main calendar, so it's clear where an event comes from.
+                            Chip(text: calendarName, systemImage: "calendar")
                         }
                     }
                 }
