@@ -7,7 +7,7 @@ struct ClearNotesApp: App {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(for: [Meeting.self, ActionItem.self])
+        .modelContainer(for: [Meeting.self, ActionItem.self, VoiceProfile.self])
     }
 }
 

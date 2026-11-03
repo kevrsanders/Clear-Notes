@@ -2,14 +2,17 @@ name: iOS
 
 # Builds and tests the iPhone app on every push that touches it. Uploads to TestFlight when
 # run by hand (Actions → iOS → Run workflow) or when a pushed commit message contains
-# "[testflight]". Setup: ios/TESTFLIGHT.md.
+# "[testflight]". Setup: ios/TESTFLIGHT.md. Set the MACOS_RUNNER repository variable
+# (e.g. macos-26-intel) to use another runner when macos-26 is short of capacity.
+#
+# macOS minutes count ten times towards a private repository's Actions allowance, so:
+# - there is no separate pull_request run (push runs already show their checks on the PR), and
+# - Markdown-only changes under ios/ don't build.
 
 on:
   push:
     branches: [main, "claude/**"]
-    paths: ["ios/**", ".github/workflows/ios.yml"]
-  pull_request:
-    paths: ["ios/**", ".github/workflows/ios.yml"]
+    paths: ["ios/**", "!ios/**/*.md", ".github/workflows/ios.yml"]
   workflow_dispatch:
     inputs:
       testflight:
@@ -28,7 +31,7 @@ defaults:
 jobs:
   test:
     name: Build and test
-    runs-on: macos-26
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -64,23 +67,43 @@ jobs:
             -project ClearNotes.xcodeproj \
             -scheme ClearNotes \
             -destination "id=$SIM_ID" \
+            -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -quiet \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Summarise test results
+        # Not on cancelled runs: reading a half-written result bundle can hang and block the queue.
+        if: success() || failure()
+        timeout-minutes: 2
+        run: |
+          # Shows how many tests ran, since -quiet hides the per-test output.
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/Tests.xcresult" --format json > "$RUNNER_TEMP/summary.json" || exit 0
+          python3 - "$RUNNER_TEMP/summary.json" <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, sys
+          s = json.load(open(sys.argv[1]))
+          print(f"**Tests:** {s.get('passedTests', 0)} passed, {s.get('failedTests', 0)} failed, "
+                f"{s.get('skippedTests', 0)} skipped (of {s.get('totalTestCount', 0)}) — {s.get('result', 'unknown')}")
+          # -quiet also hides why a test failed, so list each failure with its message.
+          for failure in s.get('testFailures', []):
+              text = " ".join(str(failure.get('failureText', '')).split())
+              print(f"- `{failure.get('testIdentifierString') or failure.get('testName', '?')}`: {text}")
+          PY
+
   testflight:
     name: Upload to TestFlight
     needs: test
     if: (github.event_name == 'workflow_dispatch' && inputs.testflight) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[testflight]'))
-    runs-on: macos-26
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
     timeout-minutes: 60
     env:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      BUNDLE_ID: ${{ vars.CLEAR_NOTES_BUNDLE_ID }}
+      # Accepted as a repository variable (preferred) or a secret.
+      BUNDLE_ID: ${{ vars.CLEAR_NOTES_BUNDLE_ID || secrets.CLEAR_NOTES_BUNDLE_ID }}
     steps:
       - name: Check TestFlight settings
         working-directory: .
@@ -114,6 +137,9 @@ jobs:
           printf '%s\n' "$ASC_PRIVATE_KEY" > "$KEY_PATH"
           echo "KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
+      # The archive is built unsigned. Signing it here would need an Apple Development
+      # certificate whose private key lives on this throwaway runner, which breaks the next
+      # run. The export step below signs with Apple's cloud-managed distribution certificate.
       - name: Archive
         run: |
           xcodebuild archive \
@@ -122,15 +148,11 @@ jobs:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/ClearNotes.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -quiet \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=NO \
             CURRENT_PROJECT_VERSION="${{ github.run_number }}"
 
       - name: Upload to TestFlight
@@ -160,4 +182,5 @@ jobs:
 
       - name: Remove the key
         if: always()
+        working-directory: .
         run: rm -f "$KEY_PATH"

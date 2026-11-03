@@ -25,6 +25,13 @@ struct Speaker: Codable, Hashable, Identifiable, Sendable {
     /// 1-based, in order of first appearance. Also picks the speaker's colour.
     var number: Int
     var name: String?
+    /// Voiceprint for this meeting, kept only while Remember voices is on.
+    var embedding: [Float]?
+    /// A remembered voice this sounds like, waiting for the user to confirm.
+    var suggestedName: String?
+    var suggestedProfileID: String?
+    /// The remembered voice this speaker was matched to.
+    var matchedProfileID: String?
 
     var displayName: String { name ?? "Speaker \(number)" }
 }
@@ -64,10 +71,19 @@ final class Meeting {
     var speakerNote: String?
     /// Which engine produced the summary and actions, shown to the user for transparency.
     var insightsSource: String?
-    /// Temporary audio kept only until speakers are identified, then deleted.
+    /// Audio waiting for speaker separation.
     var pendingAudioFileName: String?
+    /// Audio kept for playback, deleted at `audioExpiresAt` (never, if nil) or by the user.
+    var audioFileName: String?
+    var audioExpiresAt: Date?
     /// Set when speakers are renamed after notes were written, so the user can refresh them.
     var notesNeedRefresh: Bool = false
+    /// Bumped on every speaker edit. Views read it so changes inside `segments` always redraw.
+    var revision: Int = 0
+    /// Names of people invited, from the calendar event the recording was linked to.
+    var attendees: [String] = []
+    /// The Teams join link from the invite, kept for importing the Teams transcript later.
+    var teamsJoinURL: String?
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []
@@ -113,6 +129,48 @@ final class Meeting {
         "Meeting · " + date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
     }
 
+    // MARK: - Calendar
+
+    /// Takes the title, invited people and Teams link from the calendar event this recording was made in.
+    func link(to event: CalendarMeeting) {
+        if !event.title.isEmpty { title = event.title }
+        attendees = event.attendees
+        teamsJoinURL = event.teamsJoinURL?.absoluteString
+    }
+
+    // MARK: - Recording
+
+    /// The kept recording, if it is still on the iPhone.
+    var playableAudioURL: URL? {
+        guard let audioFileName else { return nil }
+        let url = RecordingStore.url(for: audioFileName)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Keeps a finished recording for playback, or deletes it, depending on the user's setting.
+    func keepAudio(_ fileName: String?, retention: AudioRetention = .current) {
+        guard let fileName else { return }
+        if retention.keepsAudio {
+            audioFileName = fileName
+            audioExpiresAt = retention.expiry(from: createdAt)
+        } else {
+            RecordingStore.delete(fileName)
+        }
+    }
+
+    func deleteAudio() {
+        RecordingStore.delete(audioFileName)
+        audioFileName = nil
+        audioExpiresAt = nil
+    }
+
+    /// Removes every audio file belonging to this meeting, e.g. before deleting it.
+    func deleteAllAudio() {
+        RecordingStore.delete(pendingAudioFileName)
+        pendingAudioFileName = nil
+        deleteAudio()
+    }
+
     // MARK: - Speakers
 
     /// Seconds each speaker talked for, keyed by speaker ID.
@@ -136,6 +194,13 @@ final class Meeting {
         speakers.contains { $0.name == nil }
     }
 
+    /// Saves a speaker edit straight away and marks the notes as out of date.
+    private func didEditSpeakers() {
+        revision += 1
+        notesNeedRefresh = processingState == .ready
+        try? modelContext?.save()
+    }
+
     /// Names one speaker everywhere in the meeting.
     func renameSpeaker(_ id: String, to name: String?) {
         var updated = speakers
@@ -143,7 +208,57 @@ final class Meeting {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         updated[index].name = trimmed.isEmpty ? nil : trimmed
         speakers = updated
-        notesNeedRefresh = processingState == .ready
+        didEditSpeakers()
+    }
+
+    /// Changes one speaker in place.
+    private func updateSpeaker(_ id: String, _ change: (inout Speaker) -> Void) {
+        var updated = speakers
+        guard let index = updated.firstIndex(where: { $0.id == id }) else { return }
+        change(&updated[index])
+        speakers = updated
+    }
+
+    /// Accepts a "sounds like" suggestion: names the speaker and links the remembered voice.
+    func confirmSuggestion(for id: String) {
+        updateSpeaker(id) { speaker in
+            guard let suggested = speaker.suggestedName else { return }
+            speaker.name = suggested
+            speaker.matchedProfileID = speaker.suggestedProfileID
+            speaker.suggestedName = nil
+            speaker.suggestedProfileID = nil
+        }
+        didEditSpeakers()
+    }
+
+    func rejectSuggestion(for id: String) {
+        updateSpeaker(id) { speaker in
+            speaker.suggestedName = nil
+            speaker.suggestedProfileID = nil
+        }
+        didEditSpeakers()
+    }
+
+    /// Removes voiceprints and voice links, e.g. when the user deletes remembered voices.
+    func forgetVoiceprints() {
+        speakers = speakers.map { speaker in
+            var speaker = speaker
+            speaker.embedding = nil
+            speaker.suggestedName = nil
+            speaker.suggestedProfileID = nil
+            speaker.matchedProfileID = nil
+            return speaker
+        }
+    }
+
+    /// Adds an unnamed speaker, for splitting out a voice that separation missed.
+    @discardableResult
+    func addSpeaker() -> Speaker {
+        let number = (speakers.map(\.number).max() ?? 0) + 1
+        let speaker = Speaker(id: "S\(number)", number: number)
+        speakers = speakers + [speaker]
+        didEditSpeakers()
+        return speaker
     }
 
     /// Treats two voices as the same person, e.g. when separation split one person in two.
@@ -155,7 +270,7 @@ final class Meeting {
             return segment
         }
         speakers = speakers.filter { $0.id != id }
-        notesNeedRefresh = processingState == .ready
+        didEditSpeakers()
     }
 
     /// Moves one line of the transcript to a different speaker.
@@ -165,7 +280,7 @@ final class Meeting {
             if segment.id == segmentID { segment.speakerID = speakerID }
             return segment
         }
-        notesNeedRefresh = processingState == .ready
+        didEditSpeakers()
     }
 }
 

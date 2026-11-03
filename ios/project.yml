@@ -11,7 +11,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "0.2.0"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   ClearNotes:
@@ -34,7 +34,8 @@ targets:
           - UIInterfaceOrientationPortrait
         UIBackgroundModes:
           - audio
-        NSMicrophoneUsageDescription: Clear Notes uses the microphone to transcribe your meetings. Audio is never saved.
+        NSMicrophoneUsageDescription: Clear Notes uses the microphone to transcribe your meetings on this iPhone. Recordings stay on this iPhone.
+        NSCalendarsFullAccessUsageDescription: Clear Notes reads today's events so recordings take the meeting's title and invited people are suggested as speakers. Nothing is sent anywhere.
         NSSpeechRecognitionUsageDescription: Clear Notes turns speech into a written transcript on this iPhone.
         ITSAppUsesNonExemptEncryption: false
     settings:

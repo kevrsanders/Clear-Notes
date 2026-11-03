@@ -31,10 +31,12 @@ enum RecorderError: LocalizedError {
 
 /// Captures microphone audio and transcribes it live.
 ///
-/// Speech is recognised in short chunks. A chunk ends at a natural pause (or after
-/// `maxChunkLength`) and becomes a timestamped transcript segment. Restarting the
-/// recogniser like this keeps long meetings going and gives the transcript timestamps.
+/// On iOS 26 it uses SpeechAnalyzer (`ModernTranscriber`), Apple's long-form model that copes
+/// with people sitting further from the iPhone. On older versions it uses SFSpeechRecognizer in
+/// short chunks: a chunk ends at a natural pause (or after `maxChunkLength`) and becomes a
+/// timestamped segment, which keeps long meetings going.
 ///
+/// Quiet audio is boosted before transcription so voices across a table are easier to hear.
 /// When speaker identification is on, a 16 kHz mono copy of the audio is written to a
 /// temporary file for speaker separation. It is deleted once speakers are identified.
 @MainActor
@@ -44,11 +46,25 @@ final class MeetingRecorder {
         case idle, recording, paused, stopping
     }
 
+    /// One recognition request in the older engine. The recogniser can start its text afresh
+    /// after a pause, so finished utterances are kept in `committed` and joined with `current`.
     private struct Chunk {
         var start: TimeInterval
         var end: TimeInterval?
-        var text = ""
-        var words: [TimedWord] = []
+        var committed = ""
+        var committedWords: [TimedWord] = []
+        var current = ""
+        var currentWords: [TimedWord] = []
+
+        var text: String { TranscriptJoiner.join(committed, current) }
+        var words: [TimedWord] { committedWords + currentWords }
+
+        mutating func commitCurrent() {
+            committed = text
+            committedWords = words
+            current = ""
+            currentWords = []
+        }
     }
 
     private(set) var state: State = .idle
@@ -65,6 +81,8 @@ final class MeetingRecorder {
     private let engine = AVAudioEngine()
     private let pipe = RecognitionPipe()
     private var recognizer: SFSpeechRecognizer?
+    /// The iOS 26 transcriber, stored untyped because the type only exists on iOS 26.
+    private var modern: AnyObject?
     private var tasks: [Int: SFSpeechRecognitionTask] = [:]
     private var chunks: [Int: Chunk] = [:]
     private var currentChunk = 0
@@ -79,6 +97,8 @@ final class MeetingRecorder {
         accumulated + (resumedAt.map { Date().timeIntervalSince($0) } ?? 0)
     }
 
+    private var usesModernEngine: Bool { modern != nil }
+
     // MARK: - Permissions
 
     nonisolated static func requestPermissions() async -> Bool {
@@ -91,23 +111,49 @@ final class MeetingRecorder {
 
     // MARK: - Controls
 
-    func start(requireOnDevice: Bool, captureAudioForSpeakers: Bool, locale: Locale = .current) throws {
+    func start(
+        requireOnDevice: Bool,
+        captureAudioForSpeakers: Bool,
+        reduceEchoAndNoise: Bool = false,
+        locale: Locale = .current
+    ) async throws {
         guard state == .idle else { return }
 
-        guard let recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(),
-              recognizer.isAvailable
-        else { throw RecorderError.recognizerUnavailable }
-        if requireOnDevice && !recognizer.supportsOnDeviceRecognition {
-            throw RecorderError.onDeviceUnsupported
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), let transcriber = await ModernTranscriber.make(locale: locale) {
+            modern = transcriber
+            isOnDevice = true
         }
-        self.recognizer = recognizer
-        isOnDevice = recognizer.supportsOnDeviceRecognition
+        #endif
+
+        if !usesModernEngine {
+            guard let recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(),
+                  recognizer.isAvailable
+            else { throw RecorderError.recognizerUnavailable }
+            if requireOnDevice && !recognizer.supportsOnDeviceRecognition {
+                throw RecorderError.onDeviceUnsupported
+            }
+            self.recognizer = recognizer
+            isOnDevice = recognizer.supportsOnDeviceRecognition
+        }
 
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .default)
+        if reduceEchoAndNoise {
+            // Apple's voice processing (as used for speakerphone calls) needs play-and-record.
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+        } else {
+            try session.setCategory(.record, mode: .default)
+        }
         try session.setActive(true, options: .notifyOthersOnDeactivation)
+        Self.chooseMicrophone(session)
 
         let input = engine.inputNode
+        if reduceEchoAndNoise {
+            // Echo cancellation, noise suppression and its own level control. Works best within
+            // a metre or two; it can quieten people further away.
+            try? input.setVoiceProcessingEnabled(true)
+        }
+        pipe.boostsQuietSpeech = !reduceEchoAndNoise
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { throw RecorderError.noMicrophone }
 
@@ -128,6 +174,15 @@ final class MeetingRecorder {
         pipe.onLevel = { [weak self] level in
             Task { @MainActor in self?.push(level: level) }
         }
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), let transcriber = modern as? ModernTranscriber {
+            pipe.onBuffer = { buffer in transcriber.append(buffer) }
+            try await transcriber.start { [weak self] update in
+                Task { @MainActor in self?.apply(update.finalized, volatileText: update.volatileText) }
+            }
+        }
+        #endif
+
         pipe.installTap(on: input, format: format)
         engine.prepare()
         do {
@@ -142,17 +197,19 @@ final class MeetingRecorder {
 
         resumedAt = Date()
         state = .recording
-        beginChunk()
+        if !usesModernEngine { beginChunk() }
         startTicker()
         observeInterruptions()
     }
 
     func pause() {
         guard state == .recording else { return }
-        chunks[currentChunk]?.end = currentTime
+        if !usesModernEngine {
+            chunks[currentChunk]?.end = currentTime
+            pipe.swap(to: nil)?.endAudio()
+        }
         accumulated = currentTime
         resumedAt = nil
-        pipe.swap(to: nil)?.endAudio()
         engine.pause()
         state = .paused
         elapsed = accumulated
@@ -164,7 +221,7 @@ final class MeetingRecorder {
         try engine.start()
         resumedAt = Date()
         state = .recording
-        beginChunk()
+        if !usesModernEngine { beginChunk() }
     }
 
     /// Stops capture and waits briefly for the recogniser to deliver its final text.
@@ -182,16 +239,30 @@ final class MeetingRecorder {
         teardownAudio()
         pipe.finishAudioFile()
 
-        let deadline = Date().addingTimeInterval(3)
-        while !chunks.isEmpty && Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(100))
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), let transcriber = modern as? ModernTranscriber {
+            await transcriber.finish()
         }
-        // Keep whatever partial text arrived for chunks that never finalised.
-        for id in chunks.keys.sorted() {
-            commit(chunk: id)
+        #endif
+        if !usesModernEngine {
+            let deadline = Date().addingTimeInterval(3)
+            while !chunks.isEmpty && Date() < deadline {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            // Keep whatever partial text arrived for chunks that never finalised.
+            for id in chunks.keys.sorted() {
+                commit(chunk: id)
+            }
+            tasks.values.forEach { $0.cancel() }
+            tasks = [:]
         }
-        tasks.values.forEach { $0.cancel() }
-        tasks = [:]
+        // Text the new engine was still working on when recording stopped.
+        if !liveText.isEmpty {
+            segments.append(TranscriptSegment(start: segments.last?.end ?? 0, end: accumulated, text: liveText))
+            liveText = ""
+        }
+        pipe.onBuffer = nil
+        modern = nil
 
         state = .idle
         elapsed = accumulated
@@ -205,6 +276,13 @@ final class MeetingRecorder {
         tasks.values.forEach { $0.cancel() }
         tasks = [:]
         chunks = [:]
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), let transcriber = modern as? ModernTranscriber {
+            transcriber.cancel()
+        }
+        #endif
+        pipe.onBuffer = nil
+        modern = nil
         if state != .idle { teardownAudio() }
         pipe.finishAudioFile()
         RecordingStore.delete(audioFileName)
@@ -212,7 +290,17 @@ final class MeetingRecorder {
         state = .idle
     }
 
-    // MARK: - Recognition chunks
+    // MARK: - New engine (iOS 26)
+
+    private func apply(_ finalized: TranscriptSegment?, volatileText: String) {
+        if let finalized {
+            segments.append(finalized)
+            segments.sort { $0.start < $1.start }
+        }
+        liveText = volatileText
+    }
+
+    // MARK: - Older engine: recognition chunks
 
     private func beginChunk() {
         guard let recognizer else { return }
@@ -229,8 +317,8 @@ final class MeetingRecorder {
         chunks[id] = Chunk(start: currentTime)
         lastSpeechAt = currentTime
 
-        tasks[id] = pipe.startTask(recognizer: recognizer, request: request) { [weak self] text, words, isFinished in
-            Task { @MainActor in self?.handle(chunk: id, text: text, words: words, isFinished: isFinished) }
+        tasks[id] = pipe.startTask(recognizer: recognizer, request: request) { [weak self] update in
+            Task { @MainActor in self?.handle(chunk: id, update: update) }
         }
         pipe.swap(to: request)?.endAudio()
     }
@@ -240,19 +328,32 @@ final class MeetingRecorder {
         beginChunk()
     }
 
-    private func handle(chunk id: Int, text: String?, words: [TimedWord], isFinished: Bool) {
-        if let start = chunks[id]?.start, !words.isEmpty {
+    private func handle(chunk id: Int, update: RecognitionUpdate) {
+        guard var chunk = chunks[id] else { return }
+        let previous = chunk.text
+
+        if let text = update.text, !text.isEmpty {
+            // The recogniser sometimes starts its text afresh after a pause. Keep what it had.
+            if TranscriptJoiner.isRestart(previous: chunk.current, next: text) {
+                chunk.commitCurrent()
+            }
+            chunk.current = text
             // Word times are relative to the start of this chunk's audio.
-            chunks[id]?.words = words.map { TimedWord(text: $0.text, start: start + $0.start, end: start + $0.end) }
-        }
-        if let text, !text.isEmpty, chunks[id]?.text != text {
-            chunks[id]?.text = text
-            if id == currentChunk {
-                lastSpeechAt = currentTime
-                liveText = text
+            let offset = chunk.start
+            chunk.currentWords = update.words.map {
+                TimedWord(text: $0.text, start: offset + $0.start, end: offset + $0.end)
             }
         }
-        if isFinished { commit(chunk: id) }
+        if update.utteranceEnded {
+            chunk.commitCurrent()
+        }
+        chunks[id] = chunk
+
+        if id == currentChunk {
+            if chunk.text != previous { lastSpeechAt = currentTime }
+            liveText = chunk.text
+        }
+        if update.isFinished { commit(chunk: id) }
     }
 
     private func commit(chunk id: Int) {
@@ -263,11 +364,12 @@ final class MeetingRecorder {
 
         let text = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
+            let words = chunk.words
             segments.append(TranscriptSegment(
                 start: chunk.start,
                 end: chunk.end ?? currentTime,
                 text: text,
-                words: chunk.words.isEmpty ? nil : chunk.words
+                words: words.isEmpty ? nil : words
             ))
             segments.sort { $0.start < $1.start }
         }
@@ -300,7 +402,7 @@ final class MeetingRecorder {
     private func tick() {
         guard state == .recording else { return }
         elapsed = currentTime
-        guard let chunk = chunks[currentChunk] else { return }
+        guard !usesModernEngine, let chunk = chunks[currentChunk] else { return }
         let length = currentTime - chunk.start
         let quietFor = currentTime - lastSpeechAt
         let atNaturalPause = !chunk.text.isEmpty && length > minChunkLength && quietFor > pauseLength
@@ -317,9 +419,36 @@ final class MeetingRecorder {
 
     // MARK: - Audio session
 
+    /// Picks the best microphone for a meeting round a table.
+    ///
+    /// A plugged-in microphone (USB conference microphone or headset) wins. Otherwise the iPhone's
+    /// bottom microphone is used in its all-direction pattern: with the phone flat and screen-up,
+    /// the back microphone faces the table and sounds muffled.
+    private static func chooseMicrophone(_ session: AVAudioSession) {
+        let inputs = session.availableInputs ?? []
+        let external: [AVAudioSession.Port] = [.usbAudio, .headsetMic, .lineIn]
+        if let plugged = inputs.first(where: { external.contains($0.portType) }) {
+            try? session.setPreferredInput(plugged)
+            return
+        }
+        guard let builtIn = inputs.first(where: { $0.portType == .builtInMic }) else { return }
+        try? session.setPreferredInput(builtIn)
+        let sources = builtIn.dataSources ?? []
+        guard let source = sources.first(where: { $0.orientation == .bottom })
+            ?? sources.first(where: { $0.orientation == .front })
+        else { return }
+        if source.supportedPolarPatterns?.contains(.omnidirectional) == true {
+            try? source.setPreferredPolarPattern(.omnidirectional)
+        }
+        try? builtIn.setPreferredDataSource(source)
+    }
+
     private func teardownAudio() {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        if engine.inputNode.isVoiceProcessingEnabled {
+            try? engine.inputNode.setVoiceProcessingEnabled(false)
+        }
         ticker?.invalidate()
         ticker = nil
         if let interruptionObserver {
@@ -344,18 +473,59 @@ final class MeetingRecorder {
     }
 }
 
-/// Moves audio from the real-time audio thread to the current recognition request.
+/// What the older recogniser reported for one result.
+struct RecognitionUpdate: Sendable {
+    var text: String?
+    var words: [TimedWord]
+    /// The recogniser marked the end of an utterance (it may start fresh text afterwards).
+    var utteranceEnded: Bool
+    var isFinished: Bool
+}
+
+/// Joins recogniser text and spots when it has started afresh rather than revising.
+enum TranscriptJoiner {
+    static func join(_ first: String, _ second: String) -> String {
+        let a = first.trimmingCharacters(in: .whitespaces)
+        let b = second.trimmingCharacters(in: .whitespaces)
+        if a.isEmpty { return b }
+        if b.isEmpty { return a }
+        return a + " " + b
+    }
+
+    /// True when `next` is new speech rather than a revision of `previous`. Revisions keep
+    /// the opening word near the start; a restart begins with different words. When unsure
+    /// this prefers keeping text (at worst a word repeats) over losing it.
+    static func isRestart(previous: String, next: String) -> Bool {
+        let before = words(previous)
+        let after = words(next)
+        guard let firstBefore = before.first, !after.isEmpty else { return false }
+        return !after.prefix(3).contains(firstBefore)
+    }
+
+    private static func words(_ text: String) -> [String] {
+        text.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "'" })
+            .map(String.init)
+    }
+}
+
+/// Moves audio from the real-time audio thread to the transcriber and the speaker file.
 /// Kept outside the main actor because the tap and recogniser callbacks run on background threads.
 private final class RecognitionPipe: @unchecked Sendable {
     private let lock = NSLock()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var audioFile: AVAudioFile?
     private var converter: AVAudioConverter?
+    private let gain = AutomaticGain()
+    /// Set before the tap is installed. Off when Apple's voice processing already levels the audio.
+    var boostsQuietSpeech = true
     private let speakerFormat = AVAudioFormat(
         commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false
     )!
     /// Set before the tap is installed and not changed while audio is flowing.
     var onLevel: (@Sendable (Float) -> Void)?
+    /// Receives every buffer sent for transcription, e.g. to the iOS 26 transcriber.
+    var onBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?
 
     /// Replaces the request that receives audio and returns the previous one.
     @discardableResult
@@ -403,14 +573,18 @@ private final class RecognitionPipe: @unchecked Sendable {
     func startTask(
         recognizer: SFSpeechRecognizer,
         request: SFSpeechAudioBufferRecognitionRequest,
-        handler: @escaping @Sendable (_ text: String?, _ words: [TimedWord], _ isFinished: Bool) -> Void
+        handler: @escaping @Sendable (RecognitionUpdate) -> Void
     ) -> SFSpeechRecognitionTask {
         recognizer.recognitionTask(with: request) { result, error in
-            let isFinished = (result?.isFinal ?? false) || error != nil
             let words = result?.bestTranscription.segments.map {
                 TimedWord(text: $0.substring, start: $0.timestamp, end: $0.timestamp + $0.duration)
             } ?? []
-            handler(result?.bestTranscription.formattedString, words, isFinished)
+            handler(RecognitionUpdate(
+                text: result?.bestTranscription.formattedString,
+                words: words,
+                utteranceEnded: result?.speechRecognitionMetadata != nil,
+                isFinished: (result?.isFinal ?? false) || error != nil
+            ))
         }
     }
 
@@ -420,11 +594,17 @@ private final class RecognitionPipe: @unchecked Sendable {
         let file = audioFile
         let converter = converter
         lock.unlock()
-        current?.append(buffer)
+        // The kept recording (playback and speaker separation) gets the untouched microphone audio.
         if let file, let converter {
             write(buffer, using: converter, to: file)
         }
         onLevel?(Self.normalisedLevel(of: buffer))
+        // Only the transcriber hears the boosted version.
+        if boostsQuietSpeech {
+            gain.apply(to: buffer)
+        }
+        current?.append(buffer)
+        onBuffer?(buffer)
     }
 
     private func write(_ buffer: AVAudioPCMBuffer, using converter: AVAudioConverter, to file: AVAudioFile) {
@@ -460,5 +640,62 @@ private final class RecognitionPipe: @unchecked Sendable {
         let rms = (sum / Float(count)).squareRoot()
         let decibels = 20 * log10(max(rms, 0.000_01))
         return max(0, min(1, (decibels + 50) / 50))
+    }
+}
+
+/// Lifts quiet speech (people further from the iPhone) towards a steady level for the
+/// transcriber. It only adjusts while someone is speaking, so pauses and background hiss
+/// aren't raised, and a limiter near full scale stops loud voices distorting.
+/// Runs on the audio thread only.
+final class AutomaticGain: @unchecked Sendable {
+    /// About −20 dBFS: a comfortable speech level for recognition.
+    static let targetLevel: Float = 0.1
+    /// At most about +12 dB, so room echo and noise aren't raised too far.
+    static let maximumGain: Float = 4
+    /// Levels this many times above the background count as speech.
+    static let speechRatio: Float = 3
+    private(set) var gain: Float = 1
+    private(set) var noiseFloor: Float = 0.003
+
+    /// The gain to aim for given a buffer's RMS level.
+    static func desiredGain(forLevel rms: Float) -> Float {
+        min(maximumGain, max(1, targetLevel / max(rms, 0.002)))
+    }
+
+    /// Passes quiet samples through unchanged and softly limits anything near full scale.
+    static func limit(_ sample: Float) -> Float {
+        let knee: Float = 0.8
+        let magnitude = abs(sample)
+        guard magnitude > knee else { return sample }
+        let limited = knee + (1 - knee) * tanhf((magnitude - knee) / (1 - knee))
+        return sample < 0 ? -limited : limited
+    }
+
+    func apply(to buffer: AVAudioPCMBuffer) {
+        guard let channels = buffer.floatChannelData else { return }
+        let count = Int(buffer.frameLength)
+        guard count > 0 else { return }
+
+        var sum: Float = 0
+        for i in 0..<count {
+            sum += channels[0][i] * channels[0][i]
+        }
+        let rms = (sum / Float(count)).squareRoot()
+
+        // Background level: follows quiet moments quickly and loud ones very slowly.
+        noiseFloor = rms < noiseFloor ? rms : noiseFloor + (rms - noiseFloor) * 0.002
+        if rms > max(noiseFloor, 0.001) * Self.speechRatio {
+            let desired = Self.desiredGain(forLevel: rms)
+            // Turn down quickly when speech gets loud, up gently for quieter voices.
+            gain += (desired - gain) * (desired < gain ? 0.5 : 0.1)
+        }
+
+        guard gain > 1.01 else { return }
+        for channel in 0..<Int(buffer.format.channelCount) {
+            let samples = channels[channel]
+            for i in 0..<count {
+                samples[i] = Self.limit(samples[i] * gain)
+            }
+        }
     }
 }

@@ -9,6 +9,8 @@ struct SpeakerTurn: Equatable, Sendable {
     var speaker: String
     var start: TimeInterval
     var end: TimeInterval
+    /// The voiceprint for this stretch, if the separator provides one.
+    var embedding: [Float] = []
 }
 
 enum SpeakerSeparationError: LocalizedError {
@@ -21,7 +23,8 @@ enum SpeakerSeparationError: LocalizedError {
 
 /// Finds who spoke when in a recording.
 protocol SpeakerSeparating: Sendable {
-    func separate(audioAt url: URL) async throws -> [SpeakerTurn]
+    /// `expectedSpeakers` fixes the number of voices when the user knows it.
+    func separate(audioAt url: URL, expectedSpeakers: Int?) async throws -> [SpeakerTurn]
 }
 
 enum SpeakerSeparators {
@@ -54,17 +57,32 @@ enum SpeakerSeparators {
 #if canImport(FluidAudio)
 /// On-device speaker separation using FluidAudio's Core ML models (pyannote-based).
 struct FluidSpeakerSeparator: SpeakerSeparating {
-    func separate(audioAt url: URL) async throws -> [SpeakerTurn] {
-        let samples = try AudioSamples.load(from: url)
-        guard !samples.isEmpty else { return [] }
-        let manager = OfflineDiarizerManager()
+    func separate(audioAt url: URL, expectedSpeakers: Int?) async throws -> [SpeakerTurn] {
+        var samples = try AudioSamples.load(from: url)
+        // Too short to tell voices apart.
+        guard samples.count >= AudioSamples.sampleRate * 3 else { return [] }
+        // Pad short clips with silence so the model always gets at least one full window.
+        let minimum = AudioSamples.sampleRate * 12
+        if samples.count < minimum {
+            samples += [Float](repeating: 0, count: minimum - samples.count)
+        }
+        var config = OfflineDiarizerConfig.default
+        if let expectedSpeakers {
+            config.clustering.numSpeakers = expectedSpeakers
+        } else {
+            // Slightly keener to split voices than the default (0.6). Quiet, distant voices
+            // otherwise merge into nearby ones, and merging back is one tap for the user.
+            config.clustering.threshold = 0.55
+        }
+        let manager = OfflineDiarizerManager(config: config)
         try await manager.prepareModels()
         let result = try await manager.process(audio: samples)
         return result.segments.map {
             SpeakerTurn(
                 speaker: $0.speakerId,
                 start: TimeInterval($0.startTimeSeconds),
-                end: TimeInterval($0.endTimeSeconds)
+                end: TimeInterval($0.endTimeSeconds),
+                embedding: $0.embedding
             )
         }
     }
@@ -72,6 +90,8 @@ struct FluidSpeakerSeparator: SpeakerSeparating {
 #endif
 
 enum AudioSamples {
+    static let sampleRate = 16_000
+
     /// Reads the 16 kHz mono file written during recording as floating-point samples.
     static func load(from url: URL) throws -> [Float] {
         let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)

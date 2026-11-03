@@ -7,11 +7,14 @@ struct RecordingView: View {
         case transcript, notes
     }
 
-    var onFinish: (RecordingResult, String) -> Void
+    /// The calendar event this recording is for. Found automatically when not given.
+    @State var calendarMeeting: CalendarMeeting? = nil
+    var onFinish: (RecordingResult, String, CalendarMeeting?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage(SettingsKeys.requireOnDevice) private var requireOnDevice = true
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
+    @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
     @State private var recorder = MeetingRecorder()
     @State private var notes = ""
     @State private var pane: Pane = .transcript
@@ -43,6 +46,9 @@ struct RecordingView: View {
 
             VStack(spacing: 18) {
                 header
+                if let calendarMeeting, errorMessage == nil {
+                    linkedMeeting(calendarMeeting)
+                }
                 if let errorMessage {
                     errorView(errorMessage)
                 } else {
@@ -118,6 +124,42 @@ struct RecordingView: View {
             Color.clear.frame(width: 40, height: 40)
         }
         .padding(.top, 8)
+    }
+
+    /// "Weekly check-in · 10:00–11:00 · 5 invited", with a button to unlink a wrong match.
+    private func linkedMeeting(_ meeting: CalendarMeeting) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "calendar")
+                .foregroundStyle(.white.opacity(0.6))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(meeting.title.isEmpty ? "Calendar event" : meeting.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text([meeting.timeRange, meeting.attendees.isEmpty ? nil : "\(meeting.attendees.count) invited"]
+                    .compactMap { $0 }
+                    .joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            Spacer(minLength: 0)
+            Button {
+                withAnimation { calendarMeeting = nil }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(width: 30, height: 30)
+                    .background(.white.opacity(0.1), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Not this meeting")
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .padding(.vertical, 8)
+        .background(Color.white.opacity(0.06), in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.08)))
     }
 
     private var statusText: String {
@@ -269,14 +311,18 @@ struct RecordingView: View {
     // MARK: - Actions
 
     private func start() async {
+        if calendarMeeting == nil {
+            calendarMeeting = CalendarReader.shared.currentMeeting()
+        }
         guard await MeetingRecorder.requestPermissions() else {
             errorMessage = RecorderError.permissionDenied.errorDescription
             return
         }
         do {
-            try recorder.start(
+            try await recorder.start(
                 requireOnDevice: requireOnDevice,
-                captureAudioForSpeakers: identifySpeakers && SpeakerSeparators.isSupported
+                captureAudioForSpeakers: (identifySpeakers && SpeakerSeparators.isSupported) || AudioRetention.current.keepsAudio,
+                reduceEchoAndNoise: reduceEchoAndNoise
             )
         } catch {
             errorMessage = error.localizedDescription
@@ -295,7 +341,7 @@ struct RecordingView: View {
         isFinishing = true
         notesFocused = false
         let result = await recorder.stop()
-        onFinish(result, notes)
+        onFinish(result, notes, calendarMeeting)
         dismiss()
     }
 }

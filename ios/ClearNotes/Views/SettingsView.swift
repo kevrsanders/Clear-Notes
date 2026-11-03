@@ -1,5 +1,7 @@
 import Speech
+import SwiftData
 import SwiftUI
+import UIKit
 
 enum SettingsKeys {
     static let showConsentReminder = "showConsentReminder"
@@ -7,6 +9,11 @@ enum SettingsKeys {
     static let identifySpeakers = "identifySpeakers"
     static let speakerModelsReady = "speakerModelsReady"
     static let myName = "myName"
+    static let audioRetention = "audioRetentionDays"
+    static let reduceEchoAndNoise = "reduceEchoAndNoise"
+    static let rememberVoices = "rememberVoices"
+    static let useCalendar = "useCalendar"
+    static let calendarChoices = "calendarChoices"
 }
 
 struct SettingsView: View {
@@ -15,6 +22,12 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @AppStorage(SettingsKeys.speakerModelsReady) private var speakerModelsReady = false
     @AppStorage(SettingsKeys.myName) private var myName = ""
+    @AppStorage(SettingsKeys.audioRetention) private var audioRetention = AudioRetention.default.rawValue
+    @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
+    @AppStorage(SettingsKeys.rememberVoices) private var rememberVoices = false
+    @AppStorage(SettingsKeys.useCalendar) private var useCalendar = false
+    @State private var calendarBlocked = CalendarReader.isBlocked
+    @Query private var voices: [VoiceProfile]
     @State private var isDownloading = false
     @State private var downloadError: String?
 
@@ -50,11 +63,79 @@ struct SettingsView: View {
                         toggle("Remind me to tell attendees", systemImage: "person.wave.2", isOn: $showConsentReminder)
                     }
 
-                    section("Speakers", footer: "Keeps the audio on this iPhone only until voices are separated, then deletes it. The speaker models are downloaded once. No meeting data is sent.") {
+                    section("Calendar", footer: "Reads today's events from your main calendar, and from any others you turn on in Choose calendars. Colleagues' shared calendars stay off unless you turn them on. Meetings with other people invited come before blocks like WFH or Focus time. Recordings take the meeting's title, invited people are suggested when naming speakers and action owners, and the Teams link is kept for later. Only the title, invited names and Teams link are saved with each meeting. Nothing is sent anywhere.") {
+                        Toggle(isOn: calendarToggle) {
+                            Label {
+                                Text("Use my calendar")
+                            } icon: {
+                                Image(systemName: "calendar")
+                                    .foregroundStyle(Theme.brand)
+                            }
+                        }
+                        .tint(Theme.brand)
+                        if useCalendar && CalendarReader.hasAccess {
+                            Divider()
+                            NavigationLink {
+                                CalendarsView()
+                            } label: {
+                                Text("Choose calendars")
+                            }
+                        }
+                        if calendarBlocked {
+                            Divider()
+                            HStack(spacing: 12) {
+                                Text("Calendar access is off for Clear Notes. Turn on Full Access in iOS Settings.")
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.warning)
+                                Spacer(minLength: 0)
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    Button("Settings") { UIApplication.shared.open(url) }
+                                        .buttonStyle(SecondaryButtonStyle(compact: true))
+                                }
+                            }
+                        }
+                    }
+
+                    section("Microphone", footer: "Echo and noise reduction is the processing iPhone uses for speakerphone calls. It cleans up echo and hiss but works best within a metre or two, so it can quieten people further away. Leave it off for meetings round a table. A plugged-in USB conference microphone is used automatically and picks up a room best.") {
+                        toggle("Reduce echo and noise", systemImage: "waveform.badge.minus", isOn: $reduceEchoAndNoise)
+                    }
+
+                    section("Recordings", footer: (AudioRetention(rawValue: audioRetention) ?? .default).promise + " Recordings are excluded from backups and never leave this iPhone.") {
+                        Picker(selection: $audioRetention) {
+                            ForEach(AudioRetention.allCases) { option in
+                                Text(option.title).tag(option.rawValue)
+                            }
+                        } label: {
+                            Label {
+                                Text("Keep recordings")
+                            } icon: {
+                                Image(systemName: "waveform")
+                                    .foregroundStyle(Theme.brand)
+                            }
+                        }
+                        .tint(Theme.brand)
+                    }
+
+                    section("Speakers", footer: "Voices are separated on this iPhone after each meeting. The speaker models are downloaded once. No meeting data is sent. Remember voices (off by default) saves a voiceprint when you name someone, only with their agreement, so later meetings can suggest their name. Voiceprints are biometric data: check with your Information Governance team before using this with colleagues.") {
                         toggle("Identify speakers", systemImage: "person.2.wave.2", isOn: $identifySpeakers)
                             .disabled(!SpeakerSeparators.isSupported)
                         Divider()
                         modelsRow
+                        Divider()
+                        toggle("Remember voices", systemImage: "person.wave.2.fill", isOn: $rememberVoices)
+                            .disabled(!SpeakerSeparators.isSupported)
+                        if rememberVoices || !voices.isEmpty {
+                            NavigationLink {
+                                VoicesView()
+                            } label: {
+                                HStack {
+                                    Text("Remembered voices")
+                                    Spacer()
+                                    Text("\(voices.count)")
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
+                            }
+                        }
                     }
 
                     section("This iPhone") {
@@ -76,7 +157,7 @@ struct SettingsView: View {
                     section("About") {
                         LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "–")
                         Divider()
-                        Text("Phase 1: on-device capture, speakers and notes. Calendar, task-tool integrations and cross-meeting search come in Phase 2.")
+                        Text("Phase 1: on-device capture, speakers, notes and calendar. Microsoft 365 and Teams integrations and cross-meeting search come in Phase 2.")
                             .font(.footnote)
                             .foregroundStyle(Theme.textSecondary)
                     }
@@ -87,6 +168,30 @@ struct SettingsView: View {
             .scrollDismissesKeyboard(.immediately)
             .background { GlowBackground() }
             .toolbar(.hidden, for: .navigationBar)
+            .onAppear {
+                calendarBlocked = CalendarReader.isBlocked
+                // Access may have been removed in iOS Settings since it was turned on.
+                if useCalendar && !CalendarReader.hasAccess && CalendarReader.hasAnswered {
+                    useCalendar = false
+                }
+            }
+        }
+    }
+
+    /// Turning the calendar on asks iOS for access first, and stays off if it isn't given.
+    private var calendarToggle: Binding<Bool> {
+        Binding {
+            useCalendar
+        } set: { isOn in
+            guard isOn else {
+                useCalendar = false
+                return
+            }
+            Task { @MainActor in
+                let granted = await CalendarReader.shared.requestAccess()
+                useCalendar = granted
+                calendarBlocked = !granted
+            }
         }
     }
 

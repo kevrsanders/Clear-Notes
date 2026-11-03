@@ -6,8 +6,14 @@ import SwiftUI
 struct SpeakerNamingSheet: View {
     @Bindable var meeting: Meeting
     let speaker: Speaker
+    /// Plays the recording between two times, when the recording is kept.
+    var onPlay: ((TimeInterval, TimeInterval?) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @AppStorage(SettingsKeys.rememberVoices) private var rememberVoices = false
+    @State private var rememberThisVoice = false
+    @State private var suggestionRejected = false
     @Query private var allMeetings: [Meeting]
     @AppStorage(SettingsKeys.myName) private var myName = ""
     @State private var name = ""
@@ -24,10 +30,11 @@ struct SpeakerNamingSheet: View {
             .sorted { $0.start < $1.start }
     }
 
-    /// "Me", then people from earlier meetings and action owners, skipping names already used here.
+    /// "Me", people invited to this meeting, then people from earlier meetings and action owners,
+    /// skipping names already used here.
     private var suggestions: [String] {
         let me = myName.trimmingCharacters(in: .whitespaces)
-        var candidates = [me.isEmpty ? "Me" : me]
+        var candidates = [me.isEmpty ? "Me" : me] + meeting.attendees
         for other in allMeetings.sorted(by: { $0.createdAt > $1.createdAt }) {
             candidates += other.speakers.compactMap(\.name)
             candidates += other.actions.compactMap(\.owner)
@@ -68,6 +75,10 @@ struct SpeakerNamingSheet: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
 
+                if let suggested = speaker.suggestedName, !suggestionRejected {
+                    suggestionCard(suggested)
+                }
+
                 if !quotes.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         Eyebrow("They said")
@@ -82,11 +93,38 @@ struct SpeakerNamingSheet: View {
                                         .italic()
                                         .lineLimit(4)
                                 }
+                                Spacer(minLength: 0)
+                                if let onPlay {
+                                    Button {
+                                        onPlay(quote.start, quote.end)
+                                    } label: {
+                                        Image(systemName: "play.fill")
+                                            .font(.system(size: 13, weight: .bold))
+                                            .foregroundStyle(color)
+                                            .frame(width: 34, height: 34)
+                                            .background(color.opacity(0.14), in: Circle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Play this line")
+                                }
                             }
                             .fixedSize(horizontal: false, vertical: true)
                             .cardStyle(padding: 14)
                         }
                     }
+                }
+
+                if rememberVoices && speaker.embedding != nil {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(isOn: $rememberThisVoice) {
+                            Label("Remember this voice", systemImage: "person.wave.2.fill")
+                        }
+                        .tint(Theme.brand)
+                        Text("Only with their agreement. Their voiceprint stays on this iPhone and is used to suggest their name in later meetings.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .cardStyle(padding: 14)
                 }
 
                 HStack(spacing: 10) {
@@ -156,7 +194,40 @@ struct SpeakerNamingSheet: View {
 
     private func save(_ newName: String?) {
         meeting.renameSpeaker(speaker.id, to: newName)
+        if rememberThisVoice, let newName, let embedding = speaker.embedding {
+            VoiceLibrary.remember(name: newName, embedding: embedding, in: context)
+        }
         dismiss()
+    }
+
+    /// "Sounds like Priya": confirming names the speaker and strengthens the remembered voice.
+    private func suggestionCard(_ suggested: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                IconTile(systemName: "person.wave.2.fill", tint: nil, size: 32)
+                Text("Sounds like **\(suggested)**")
+                    .font(.headline)
+            }
+            HStack(spacing: 8) {
+                Button {
+                    meeting.confirmSuggestion(for: speaker.id)
+                    if let embedding = speaker.embedding {
+                        VoiceLibrary.remember(name: suggested, embedding: embedding, in: context)
+                    }
+                    dismiss()
+                } label: {
+                    Label("Yes, it's \(suggested)", systemImage: "checkmark")
+                }
+                .buttonStyle(PrimaryButtonStyle(compact: true))
+
+                Button("Not them") {
+                    meeting.rejectSuggestion(for: speaker.id)
+                    suggestionRejected = true
+                }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+            }
+        }
+        .cardStyle(padding: 16)
     }
 }
 
