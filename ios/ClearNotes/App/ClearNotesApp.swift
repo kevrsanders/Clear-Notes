@@ -14,19 +14,12 @@ struct ClearNotesApp: App {
 struct ContentView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
-    @Query private var actions: [ActionItem]
-
-    private var actionBadge: Int {
-        actions.filter { $0.status == .suggested || $0.status == .open }.count
-    }
 
     var body: some View {
+        // Actions live inside each meeting, so there's no separate Actions tab.
         TabView {
             MeetingsListView()
                 .tabItem { Label("Meetings", systemImage: "waveform") }
-            ActionsView()
-                .tabItem { Label("Actions", systemImage: "checklist") }
-                .badge(actionBadge)
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }

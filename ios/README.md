@@ -13,7 +13,8 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
 - **Edit a line**: hold a transcript line → *Edit text*.
 - **Distant voices**: the transcriber gets a gentle automatic boost (up to about +12 dB, only while someone is speaking, with a limiter near full scale). The kept recording is the untouched microphone audio. The app uses a plugged-in USB or headset microphone if there is one, otherwise the iPhone's bottom microphone in its all-direction pattern (the back microphone faces the table when the phone lies screen-up).
 - **Echo and noise reduction** (Settings → Microphone, off by default): Apple's speakerphone processing. It cuts echo and hiss but favours people within a metre or two.
-- **Wrong number of speakers?**: on a meeting with a kept recording, choose how many people spoke and speaker separation runs again with that number. Names stay with the voices that match ones you've named (a new voice must cover mostly the same lines); only new voices need naming.
+- **How many people? (optional)**: the people button at the top right of the recording screen sets how many are speaking (Auto by default). It never stops you recording and can be changed any time before Stop. A known number helps speaker separation tell similar voices apart; it doesn't change the words transcribed.
+- **Wrong number of speakers?**: on a meeting with a kept recording, choose how many people spoke and speaker separation runs again with that number (it's remembered for the meeting). Names stay with the voices that match ones you've named (a new voice must cover mostly the same lines); only new voices need naming.
 - **Remember voices** (Settings → Speakers, off by default): when you name a speaker you can tick *Remember this voice*, only with their agreement. Their voiceprint is saved on the iPhone and later meetings suggest "Sounds like Priya?". After three confirmations, strong matches are named automatically ("Recognised"). Settings → Remembered voices lists who's saved and can forget them. Voiceprints are biometric (UK GDPR special category) data, so check with your Information Governance team before using this with colleagues.
 - **Fixing speakers by hand**: long-press a line → *Change speaker* to move it to another speaker or a **New speaker**. Tapping a line plays just that line; *Play from here* carries on.
 - **Playback**: a player bar on each meeting, with 1×/1.5×/2× speed. Tap any transcript line to hear that moment, or play a speaker's lines while naming them. **Settings → Keep recordings** sets how long audio is kept; "Delete recording" removes it sooner. Recordings are excluded from backups.
@@ -35,7 +36,7 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
 - **One-tap follow-ups**: *List actions*, *Write follow-up email* and *Draft project plan*. Drafts are built only from the meeting's own notes and accepted actions. On iPhones with Apple Intelligence they're rewritten into natural prose on the device, with an instruction to keep every fact. They're editable, with Copy and Share.
 - **Talk time**: each speaker's share of the conversation, as percentages and a coloured bar.
 - **Action review**: AI suggestions arrive as *To review*, and you accept or dismiss each one. Every action links back to the transcript line it came from (**Source**).
-- **Actions tab**: every open action across all meetings, with a badge count.
+- **Actions stay with their meeting**: each meeting card shows how many actions are open or waiting for review, and they're reviewed and ticked off inside the meeting (or on a later meeting's Last time card). There's no separate Actions tab. The home screen counts meetings today, this week and in total.
 - **Search** across titles, summaries, notes and transcripts.
 - **Share or copy** a meeting as Markdown (summary, decisions, actions, notes and transcript).
 - **Consent reminder** before each recording, which you can turn off.
@@ -86,7 +87,7 @@ ios/
 │   │   ├── HeuristicEnhancer    Rules-based fallback
 │   │   ├── MeetingProcessor     Speakers, then notes; resumes after relaunch; keeps reviewed actions
 │   │   └── MarkdownExporter     Share or copy text
-│   └── Views/                   Home, Recording, Meeting detail, Speaker naming, Actions, Settings
+│   └── Views/                   Home, Recording, Meeting detail, Speaker naming, Settings
 │       └── Components/          Design system: Theme, glass, PillTabs, Avatar, ActionCard…
 └── ClearNotesTests/             Unit tests for extraction, speaker splitting, formatting and source linking
 ```

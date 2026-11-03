@@ -23,6 +23,8 @@ struct RecordingView: View {
     @State private var confirmDiscard = false
     @State private var isFinishing = false
     @State private var showLastTime = false
+    /// How many people are in the meeting, if the user says. Optional: Auto works it out.
+    @State private var peopleCount: Int?
     @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
     @FocusState private var notesFocused: Bool
 
@@ -133,9 +135,52 @@ struct RecordingView: View {
             .frame(height: 40)
             .glass(in: Capsule())
             Spacer()
-            Color.clear.frame(width: 40, height: 40)
+            if identifySpeakers && SpeakerSeparators.isSupported {
+                peopleMenu
+            } else {
+                Color.clear.frame(width: 40, height: 40)
+            }
         }
         .padding(.top, 8)
+    }
+
+    /// Optional and never in the way: how many people are speaking. A known number helps tell the
+    /// voices apart afterwards; it doesn't change the words. Can be set any time before Stop.
+    private var peopleMenu: some View {
+        Menu {
+            Section("How many people are speaking? It helps tell voices apart.") {
+                Picker("People", selection: $peopleCount) {
+                    Text("Auto").tag(Int?.none)
+                    ForEach(2...8, id: \.self) { count in
+                        Text("\(count) people").tag(Int?.some(count))
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            }
+        } label: {
+            Group {
+                if let peopleCount {
+                    HStack(spacing: 2) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("\(peopleCount)")
+                            .font(.system(size: 15, weight: .bold))
+                            .monospacedDigit()
+                    }
+                } else {
+                    Image(systemName: "person.2")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+            }
+            .foregroundStyle(.primary)
+            .frame(width: 40, height: 40)
+            .glass(in: Circle())
+        }
+        .disabled(isFinishing)
+        .accessibilityLabel("People in the meeting")
+        .accessibilityValue(peopleCount.map { "\($0) people" } ?? "Auto")
+        .accessibilityHint("Optional. Helps tell voices apart afterwards")
     }
 
     /// The last meeting in the linked meeting's series, if one was recorded.
@@ -420,7 +465,8 @@ struct RecordingView: View {
     private func finish() async {
         isFinishing = true
         notesFocused = false
-        let result = await recorder.stop()
+        var result = await recorder.stop()
+        result.expectedSpeakers = peopleCount
         onFinish(result, notes, calendarMeeting)
         dismiss()
     }

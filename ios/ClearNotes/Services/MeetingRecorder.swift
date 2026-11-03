@@ -9,6 +9,8 @@ struct RecordingResult {
     var audioFileName: String?
     /// Moments marked as actions or decisions while recording.
     var marks: [MeetingMark] = []
+    /// How many people the user said are in the meeting, or nil for Auto.
+    var expectedSpeakers: Int?
 }
 
 enum RecorderError: LocalizedError {
