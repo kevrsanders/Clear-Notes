@@ -22,6 +22,9 @@ struct MeetingDetailView: View {
     @State private var playback = AudioPlayback()
     @State private var confirmDeleteAudio = false
     @State private var choosingSpeakerCount = false
+    @State private var confirmImproveTranscript = false
+    @State private var improveFailed = false
+    @State private var editingSegment: TranscriptSegment?
     @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
 
     /// The last meeting in this meeting's series, for the Last time card.
@@ -109,6 +112,28 @@ struct MeetingDetailView: View {
             }
         } message: {
             Text("Clear Notes listens to the recording again and regroups the voices. Speaker names will need adding again.")
+        }
+        .confirmationDialog("Improve the transcript?", isPresented: $confirmImproveTranscript, titleVisibility: .visible) {
+            Button("Improve transcript") {
+                Task {
+                    let improved = await MeetingProcessor.improveTranscript(of: meeting)
+                    if !improved { improveFailed = true }
+                }
+            }
+        } message: {
+            Text("Transcribes the recording again with the more accurate model on this iPhone. Speaker names are kept; any lines you edited are replaced.")
+        }
+        .alert("The transcript couldn't be improved", isPresented: $improveFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The live transcript has been kept. Check the recording is still on this iPhone and try again later.")
+        }
+        .sheet(item: $editingSegment) { segment in
+            LineEditor(text: segment.text) { newText in
+                meeting.editSegmentText(segment.id, to: newText)
+            }
+            .presentationDetents([.medium])
+            .presentationCornerRadius(32)
         }
         .confirmationDialog("Delete the recording?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
             Button("Delete recording", role: .destructive) {
@@ -205,6 +230,14 @@ struct MeetingDetailView: View {
                     Label("Regenerate notes", systemImage: "sparkles")
                 }
                 .disabled(meeting.processingState == .processing)
+                if AccurateTranscriber.isReady && meeting.playableAudioURL != nil {
+                    Button {
+                        confirmImproveTranscript = true
+                    } label: {
+                        Label("Improve transcript", systemImage: "text.badge.checkmark")
+                    }
+                    .disabled(meeting.processingState == .processing)
+                }
                 Divider()
                 if meeting.audioFileName != nil {
                     Button(role: .destructive) {
@@ -301,7 +334,7 @@ struct MeetingDetailView: View {
 
         if meeting.notesNeedRefresh {
             HStack(spacing: 12) {
-                Text("Speaker names changed. Refresh the notes to use them.")
+                Text("The transcript or speaker names changed. Refresh the notes to use them.")
                     .font(.subheadline)
                 Spacer(minLength: 0)
                 Button("Refresh") {
@@ -685,6 +718,7 @@ struct MeetingDetailView: View {
                         let speaker = meeting.addSpeaker()
                         meeting.reassignSegment(segmentID, to: speaker.id)
                     },
+                    onEdit: { editingSegment = $0 },
                     onPlay: playHandler
                 )
                 .id("\(turn.id)-\(revision)")
@@ -704,6 +738,7 @@ struct MeetingDetailView: View {
         var onName: (Speaker) -> Void
         var onReassign: (UUID, String) -> Void
         var onNewSpeaker: (UUID) -> Void
+        var onEdit: (TranscriptSegment) -> Void
         /// Plays the recording between two times, when the recording is kept.
         var onPlay: ((TimeInterval, TimeInterval?) -> Void)?
 
@@ -785,6 +820,11 @@ struct MeetingDetailView: View {
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
+                Button {
+                    onEdit(segment)
+                } label: {
+                    Label("Edit text", systemImage: "pencil")
+                }
                 if !allSpeakers.isEmpty {
                     Menu {
                         ForEach(allSpeakers.filter { $0.id != segment.speakerID }) { option in
@@ -858,9 +898,13 @@ private struct ProcessingCard: View {
     private var showsSpeakerStep: Bool {
         stage == .speakers || !meeting.speakers.isEmpty || meeting.speakerNote != nil
     }
+    private var showsTranscriptStep: Bool {
+        stage == .transcript || meeting.transcriptImproved
+    }
     private var progress: Double {
         switch stage {
-        case .speakers: 0.4
+        case .transcript: 0.25
+        case .speakers: 0.45
         case .notes: 0.75
         case nil: 0.15
         }
@@ -877,6 +921,13 @@ private struct ProcessingCard: View {
                     .tint(Theme.brand)
                     .animation(.easeInOut, value: progress)
                 step("Transcribed", detail: "\(meeting.duration.durationString) · \(wordCount) words", state: .done)
+                if showsTranscriptStep {
+                    step(
+                        "Improving the transcript",
+                        detail: "A second, more accurate pass on this iPhone",
+                        state: stage == .transcript ? .active : .done
+                    )
+                }
                 if showsSpeakerStep {
                     step("Identifying speakers", detail: "Separating voices on this iPhone", state: stage == .speakers ? .active : .done)
                 }
@@ -1021,5 +1072,40 @@ private struct PlayerBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .glass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+}
+
+/// Corrects the words of one transcript line.
+private struct LineEditor: View {
+    @State var text: String
+    var onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: $text)
+                .focused($focused)
+                .scrollContentBackground(.hidden)
+                .padding(12)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+                .padding(Theme.gutter)
+                .background(Theme.background)
+                .navigationTitle("Edit line")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            onSave(text)
+                            dismiss()
+                        }
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .onAppear { focused = true }
+        }
     }
 }

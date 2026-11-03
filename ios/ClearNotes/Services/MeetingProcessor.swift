@@ -22,10 +22,21 @@ enum MeetingProcessor {
         meeting.processingState = .processing
         meeting.processingError = nil
 
+        // A second, more accurate transcription of a new recording, once, before speakers are found.
+        let isNew = meeting.pendingAudioFileName != nil || meeting.insightsSource == nil
+        if isNew, !meeting.transcriptImproved, AccurateTranscriber.isReady,
+           let url = meeting.pendingAudioFileName.map({ RecordingStore.url(for: $0) }) ?? meeting.playableAudioURL {
+            meeting.processingStage = .transcript
+            await applyAccurateTranscript(to: meeting, from: url)
+        }
+
         if let fileName = meeting.pendingAudioFileName {
             meeting.processingStage = .speakers
             await identifySpeakers(in: meeting, audioFileName: fileName, separator: separator)
         }
+
+        // Names and terms from My words and the people in the meeting, now lines and speakers are settled.
+        applyVocabulary(to: meeting)
 
         meeting.processingStage = .notes
         var insights: MeetingInsights
@@ -151,6 +162,66 @@ enum MeetingProcessor {
         meeting.processingState = previousState
     }
 
+    /// Runs the accurate second pass on a meeting's kept recording, e.g. one recorded before it was
+    /// turned on. Speaker names are kept, and actions keep their links to where they were said.
+    /// Returns false when the recording couldn't be transcribed again.
+    @discardableResult
+    static func improveTranscript(of meeting: Meeting) async -> Bool {
+        guard let url = meeting.playableAudioURL, inFlight.insert(meeting.persistentModelID).inserted else { return false }
+        defer { inFlight.remove(meeting.persistentModelID) }
+        let backgroundTime = BackgroundTime(name: "Improve transcript")
+        defer { backgroundTime.end() }
+
+        let previousState = meeting.processingState
+        let oldSegments = meeting.segments
+        meeting.processingState = .processing
+        meeting.processingStage = .transcript
+        let improved = await applyAccurateTranscript(to: meeting, from: url)
+        if improved {
+            applyVocabulary(to: meeting)
+            for action in meeting.actions {
+                guard let id = action.sourceSegmentID, let old = oldSegments.first(where: { $0.id == id }) else { continue }
+                action.sourceSegmentID = meeting.segment(at: old.start)?.id
+            }
+            meeting.notesNeedRefresh = previousState == .ready
+            meeting.revision += 1
+        }
+        meeting.processingStage = nil
+        meeting.processingState = previousState
+        try? meeting.modelContext?.save()
+        return improved
+    }
+
+    /// Replaces the transcript with the accurate model's, keeping speakers where they're already
+    /// known. Keeps the live transcript if the second pass fails or loses most of the words.
+    @discardableResult
+    private static func applyAccurateTranscript(to meeting: Meeting, from url: URL) async -> Bool {
+        do {
+            let words = try await AccurateTranscriber.shared.words(in: url)
+            let original = meeting.segments
+            let hasSpeakers = original.contains { $0.speakerID != nil }
+            let improved = TranscriptBuilder.segments(from: words) { time in
+                hasSpeakers ? TranscriptBuilder.speaker(at: time, in: original) : nil
+            }
+            guard TranscriptBuilder.isUsable(improved, comparedWith: original) else { return false }
+            meeting.segments = improved
+            meeting.transcriptImproved = true
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Corrects names and terms the transcript misheard, from My words and the people in the meeting.
+    private static func applyVocabulary(to meeting: Meeting) {
+        let fixed = VocabularyFixer.fix(meeting.segments, terms: Vocabulary.terms(for: meeting)) { word in
+            MainActor.assumeIsolated { Vocabulary.isRealWord(word) }
+        }
+        if fixed.map(\.text) != meeting.segments.map(\.text) {
+            meeting.segments = fixed
+        }
+    }
+
     /// Voiceprints are kept on a meeting only while Remember voices is on.
     private static func voiceprintsAllowed(_ speakers: [Speaker]) -> [Speaker] {
         guard !VoiceLibrary.isEnabled else { return speakers }
@@ -190,6 +261,7 @@ enum MeetingProcessor {
         // What the user marked is an action already, so it's open rather than waiting for review.
         let markedActions = marked.actions
             .filter { action in action.markID.map { !knownMarks.contains($0) } ?? true }
+            .filter { action in !reviewed.contains { ActionList.similar($0.text, action.task) } }
             .map { extracted in
                 let item = ActionItem(
                     text: extracted.task,

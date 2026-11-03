@@ -67,7 +67,7 @@ enum ProcessingState: String, Codable {
 }
 
 enum ProcessingStage: String, Codable {
-    case speakers, notes
+    case transcript, speakers, notes
 }
 
 @Model
@@ -105,6 +105,8 @@ final class Meeting {
     var marks: [MeetingMark] = []
     /// The repeating calendar meeting this recording belongs to, for showing "Last time".
     var seriesID: String?
+    /// The transcript came from the more accurate second pass, so it isn't redone automatically.
+    var transcriptImproved: Bool = false
     /// The Teams join link from the invite, kept for importing the Teams transcript later.
     var teamsJoinURL: String?
 
@@ -322,6 +324,22 @@ final class Meeting {
     /// The transcript line being spoken at a moment, e.g. where a mark was made.
     func segment(at time: TimeInterval) -> TranscriptSegment? {
         segments.last { $0.start <= time } ?? segments.first
+    }
+
+    /// Corrects the words of one transcript line.
+    func editSegmentText(_ segmentID: UUID, to text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        segments = segments.map { segment in
+            var segment = segment
+            if segment.id == segmentID {
+                segment.text = trimmed
+                // Word timings no longer match the edited words.
+                segment.words = nil
+            }
+            return segment
+        }
+        didEditSpeakers()
     }
 
     /// Moves one line of the transcript to a different speaker.
