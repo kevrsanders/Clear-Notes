@@ -16,8 +16,8 @@ enum MeetingProcessor {
         defer { inFlight.remove(meeting.persistentModelID) }
 
         // Ask iOS for time to finish if the user leaves the app straight after recording.
-        let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Process meeting")
-        defer { UIApplication.shared.endBackgroundTask(backgroundTask) }
+        let backgroundTime = BackgroundTime(name: "Process meeting")
+        defer { backgroundTime.end() }
 
         meeting.processingState = .processing
         meeting.processingError = nil
@@ -28,20 +28,43 @@ enum MeetingProcessor {
         }
 
         meeting.processingStage = .notes
+        var insights: MeetingInsights
+        var source = enhancer.sourceName
         do {
-            let insights = try await enhancer.enhance(
+            insights = try await enhancer.enhance(
                 segments: meeting.segments,
                 speakers: meeting.speakers,
                 userNotes: meeting.userNotes
             )
-            apply(insights, to: meeting)
-            meeting.insightsSource = enhancer.sourceName
-            meeting.processingState = .ready
-            meeting.notesNeedRefresh = false
         } catch {
-            meeting.processingError = error.localizedDescription
-            meeting.processingState = .failed
+            if (error as? NotesEnhancerError) == .busy, UIApplication.shared.applicationState != .active {
+                // Apple Intelligence limits apps in the background. The meeting stays in progress
+                // and finishes when Clear Notes is next opened.
+                return
+            }
+            // Basic notes are better than none, so fall back when Apple Intelligence can't finish.
+            let basic = HeuristicEnhancer()
+            guard !(enhancer is HeuristicEnhancer),
+                  let fallback = try? await basic.enhance(
+                      segments: meeting.segments,
+                      speakers: meeting.speakers,
+                      userNotes: meeting.userNotes
+                  )
+            else {
+                meeting.processingError = error.localizedDescription
+                meeting.processingState = .failed
+                meeting.processingStage = nil
+                return
+            }
+            insights = fallback
+            insights.note = "Apple Intelligence couldn't write these notes because \(NotesEnhancers.reason(for: error)), so basic extraction was used. Try again for fuller notes."
+            source = basic.sourceName
         }
+        apply(insights, to: meeting)
+        meeting.insightsSource = source
+        meeting.notesCaveat = insights.note
+        meeting.processingState = .ready
+        meeting.notesNeedRefresh = false
         meeting.processingStage = nil
     }
 
@@ -55,6 +78,14 @@ enum MeetingProcessor {
             }
         }
         RecordingStore.deleteOrphans(keeping: Set(meetings.flatMap { [$0.pendingAudioFileName, $0.audioFileName] }.compactMap { $0 }))
+        await resumeProcessing(in: context)
+    }
+
+    /// Carries on with meetings still in progress, e.g. notes paused while the app was in the
+    /// background. Safe to call whenever the app becomes active: unlike `resumeUnfinished` it
+    /// deletes nothing, so a recording in progress is never touched.
+    static func resumeProcessing(in context: ModelContext) async {
+        let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
         for meeting in meetings where meeting.processingState == .processing {
             await process(meeting)
         }
@@ -91,8 +122,8 @@ enum MeetingProcessor {
               inFlight.insert(meeting.persistentModelID).inserted
         else { return }
         defer { inFlight.remove(meeting.persistentModelID) }
-        let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Re-check speakers")
-        defer { UIApplication.shared.endBackgroundTask(backgroundTask) }
+        let backgroundTime = BackgroundTime(name: "Re-check speakers")
+        defer { backgroundTime.end() }
 
         let previousState = meeting.processingState
         meeting.processingState = .processing
@@ -157,5 +188,24 @@ enum MeetingProcessor {
             }
         suggestions.forEach { meeting.modelContext?.insert($0) }
         meeting.actions = reviewed + suggestions
+    }
+}
+
+/// Extra time from iOS to finish work after the user leaves the app. It's handed back when the
+/// work ends or when iOS says time is up, because holding it past that gets the app terminated.
+@MainActor
+final class BackgroundTime {
+    private var identifier = UIBackgroundTaskIdentifier.invalid
+
+    init(name: String) {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            MainActor.assumeIsolated { self?.end() }
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
     }
 }

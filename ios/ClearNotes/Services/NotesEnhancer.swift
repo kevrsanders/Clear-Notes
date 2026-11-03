@@ -14,6 +14,18 @@ struct MeetingInsights: Equatable, Sendable {
     var decisions: [String]
     var actions: [ExtractedAction]
     var topics: [Topic] = []
+    /// Shown with the notes when part of them couldn't be written as usual, saying why.
+    var note: String?
+}
+
+enum NotesEnhancerError: Error, Equatable, LocalizedError {
+    /// Apple Intelligence kept refusing requests because too many were made (it limits apps in
+    /// the background most). The meeting finishes when Clear Notes is next open.
+    case busy
+
+    var errorDescription: String? {
+        "Apple Intelligence is busy. The notes will finish when Clear Notes is open."
+    }
 }
 
 /// Turns a transcript and the user's own notes into a summary, decisions and suggested actions.
@@ -32,6 +44,16 @@ enum NotesEnhancers {
         }
         #endif
         return HeuristicEnhancer()
+    }
+
+    /// Why notes couldn't be written, worded to follow "because".
+    static func reason(for error: Error) -> String {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            return AppleIntelligenceEnhancer.reason(for: error)
+        }
+        #endif
+        return error.localizedDescription
     }
 
     static var isAppleIntelligenceAvailable: Bool {

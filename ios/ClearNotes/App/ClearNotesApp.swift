@@ -13,6 +13,7 @@ struct ClearNotesApp: App {
 
 struct ContentView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
     @Query private var actions: [ActionItem]
 
     private var actionBadge: Int {
@@ -31,5 +32,11 @@ struct ContentView: View {
         }
         .tint(Theme.brand)
         .task { await MeetingProcessor.resumeUnfinished(in: context) }
+        .onChange(of: scenePhase) { _, phase in
+            // Notes paused in the background (Apple Intelligence limits background apps) carry on.
+            if phase == .active {
+                Task { await MeetingProcessor.resumeProcessing(in: context) }
+            }
+        }
     }
 }

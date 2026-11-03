@@ -376,6 +376,22 @@ struct MeetingDetailView: View {
                 .cardStyle()
             }
 
+            if meeting.processingState == .ready, let caveat = meeting.notesCaveat {
+                VStack(alignment: .leading, spacing: 12) {
+                    CardHeader(title: "About these notes", systemImage: "info.circle.fill", tint: Theme.warning)
+                    Text(caveat)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if NotesEnhancers.isAppleIntelligenceAvailable {
+                        Button("Try Apple Intelligence again") {
+                            Task { await MeetingProcessor.process(meeting) }
+                        }
+                        .buttonStyle(SecondaryButtonStyle(compact: true))
+                    }
+                }
+                .cardStyle()
+            }
+
             document
             followUps
 

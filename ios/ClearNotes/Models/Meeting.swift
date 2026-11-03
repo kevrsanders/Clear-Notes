@@ -71,6 +71,8 @@ final class Meeting {
     var speakerNote: String?
     /// Which engine produced the summary and actions, shown to the user for transparency.
     var insightsSource: String?
+    /// Why the notes are basic or partly basic (e.g. Apple Intelligence declined part), when they are.
+    var notesCaveat: String?
     /// Audio waiting for speaker separation.
     var pendingAudioFileName: String?
     /// Audio kept for playback, deleted at `audioExpiresAt` (never, if nil) or by the user.
