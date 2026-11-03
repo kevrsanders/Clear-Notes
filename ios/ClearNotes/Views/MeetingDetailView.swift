@@ -111,7 +111,7 @@ struct MeetingDetailView: View {
                 }
             }
         } message: {
-            Text("Clear Notes listens to the recording again and regroups the voices. Speaker names will need adding again.")
+            Text("Clear Notes listens to the recording again and regroups the voices. Names are kept where a voice matches one you've named; any new voices need naming.")
         }
         .confirmationDialog("Improve the transcript?", isPresented: $confirmImproveTranscript, titleVisibility: .visible) {
             Button("Improve transcript") {

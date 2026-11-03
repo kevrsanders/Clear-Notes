@@ -140,6 +140,8 @@ enum MeetingProcessor {
         defer { backgroundTime.end() }
 
         let previousState = meeting.processingState
+        let oldSegments = meeting.segments
+        let oldSpeakers = meeting.speakers
         meeting.processingState = .processing
         meeting.processingStage = .speakers
         do {
@@ -151,7 +153,12 @@ enum MeetingProcessor {
             }
             let assigned = SpeakerAssigner.assign(unassigned, turns: turns)
             meeting.segments = assigned.segments
-            meeting.speakers = voiceprintsAllowed(assigned.speakers)
+            // Names stay with the voices that match the old ones, so they needn't be added again.
+            let renamed = SpeakerNames.carry(
+                from: oldSegments, oldSpeakers: oldSpeakers,
+                to: assigned.segments, newSpeakers: assigned.speakers
+            )
+            meeting.speakers = voiceprintsAllowed(renamed)
             VoiceLibrary.applyMatches(to: meeting)
             meeting.speakerNote = nil
             meeting.notesNeedRefresh = previousState == .ready
