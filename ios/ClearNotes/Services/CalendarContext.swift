@@ -166,6 +166,22 @@ enum OwnerMatcher {
     }
 }
 
+/// Which calendars count. Work accounts often carry colleagues' shared calendars, and apps see
+/// them all, even ones hidden in Apple's Calendar app. So only the user's own calendars are used
+/// unless they choose more.
+enum CalendarChoice {
+    /// The main calendar, and each work account's own calendar (named "Calendar" in Exchange).
+    static func isOnByDefault(title: String, isMain: Bool) -> Bool {
+        isMain || title.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Calendar") == .orderedSame
+    }
+
+    /// Colleagues' shared calendars are named like directory entries: "SMITH, Jane (Example Trust)"
+    /// becomes "Jane Smith". Other names are kept.
+    static func displayName(_ title: String) -> String {
+        title.contains(",") ? (PersonName.display(name: title) ?? title) : title
+    }
+}
+
 /// Reads today's events from the calendars in Apple's Calendar app, after the user allows it.
 /// Nothing is written to the calendar and nothing leaves the iPhone.
 @MainActor
@@ -188,32 +204,50 @@ final class CalendarReader {
         return granted
     }
 
-    /// Calendars the user has turned off in Settings → Calendar → Calendars.
-    static var hiddenCalendarIDs: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: SettingsKeys.hiddenCalendars) ?? []) }
-        set { UserDefaults.standard.set(Array(newValue).sorted(), forKey: SettingsKeys.hiddenCalendars) }
+    /// The user's choices in Choose calendars, by calendar ID. Calendars without a choice
+    /// use `CalendarChoice.isOnByDefault`.
+    static var calendarChoices: [String: Bool] {
+        get { (UserDefaults.standard.dictionary(forKey: SettingsKeys.calendarChoices) as? [String: Bool]) ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKeys.calendarChoices) }
     }
 
-    /// Every event calendar on the iPhone except Birthdays, grouped by account in Settings.
+    /// The calendar new events go into, which iOS treats as the user's main one.
+    var mainCalendarID: String? { store.defaultCalendarForNewEvents?.calendarIdentifier }
+
+    /// Every event calendar on the iPhone except Birthdays: main calendars first, then by name.
     func calendars() -> [EKCalendar] {
         guard Self.hasAccess else { return [] }
+        let main = mainCalendarID
         return store.calendars(for: .event)
             .filter { $0.type != .birthday }
-            .sorted { ($0.source?.title ?? "", $0.title) < ($1.source?.title ?? "", $1.title) }
+            .sorted { first, second in
+                let firstMain = isOnByDefault(first, mainID: main)
+                let secondMain = isOnByDefault(second, mainID: main)
+                if firstMain != secondMain { return firstMain }
+                return CalendarChoice.displayName(first.title) < CalendarChoice.displayName(second.title)
+            }
     }
 
-    /// Today's events, oldest first, from the calendars the user hasn't turned off
-    /// (or from every calendar, for the Calendars list in Settings).
-    func meetingsToday(around date: Date = .now, calendar: Calendar = .current, includingHidden: Bool = false) -> [CalendarMeeting] {
-        let hidden = includingHidden ? [] : Self.hiddenCalendarIDs
-        let chosen = calendars().filter { !hidden.contains($0.calendarIdentifier) }
+    func isOnByDefault(_ calendar: EKCalendar, mainID: String?) -> Bool {
+        CalendarChoice.isOnByDefault(title: calendar.title, isMain: calendar.calendarIdentifier == mainID)
+    }
+
+    /// Whether Clear Notes uses this calendar: the user's choice, or else the default.
+    func isChosen(_ calendar: EKCalendar) -> Bool {
+        Self.calendarChoices[calendar.calendarIdentifier] ?? isOnByDefault(calendar, mainID: mainCalendarID)
+    }
+
+    /// Today's events, oldest first, from the chosen calendars (or from every calendar, for the
+    /// list in Choose calendars).
+    func meetingsToday(around date: Date = .now, calendar: Calendar = .current, fromAllCalendars: Bool = false) -> [CalendarMeeting] {
+        let chosen = calendars().filter { fromAllCalendars || isChosen($0) }
         guard !chosen.isEmpty else { return [] }
         let dayStart = calendar.startOfDay(for: date)
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? date.addingTimeInterval(86_400)
         let predicate = store.predicateForEvents(withStart: dayStart, end: dayEnd, calendars: chosen)
-        let mainCalendarID = store.defaultCalendarForNewEvents?.calendarIdentifier
+        let main = mainCalendarID
         return store.events(matching: predicate)
-            .map { CalendarMeeting(event: $0, mainCalendarID: mainCalendarID) }
+            .map { CalendarMeeting(event: $0, mainCalendarID: main) }
             .sorted { $0.start < $1.start }
     }
 
@@ -244,7 +278,9 @@ extension CalendarMeeting {
             attendees: people,
             teamsJoinURL: TeamsLink.find(in: [event.url?.absoluteString, event.location, event.notes]),
             calendarID: event.calendar?.calendarIdentifier ?? "",
-            calendarName: event.calendar.flatMap { $0.calendarIdentifier == mainCalendarID ? nil : $0.title }
+            calendarName: event.calendar.flatMap {
+                $0.calendarIdentifier == mainCalendarID ? nil : CalendarChoice.displayName($0.title)
+            }
         )
     }
 

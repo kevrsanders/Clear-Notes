@@ -1,13 +1,15 @@
 import EventKit
 import SwiftUI
 
-/// Settings → Calendar → Calendars: choose which calendars Clear Notes uses. Each calendar lists
-/// today's events, so it's easy to see where an event like "WFH" comes from.
+/// Settings → Calendar → Choose calendars: which calendars Clear Notes uses. Your main calendar is
+/// on; colleagues' shared calendars are off until turned on. Each lists today's events, so it's
+/// easy to see where an event like "WFH" comes from.
 struct CalendarsView: View {
     private struct CalendarRow: Identifiable {
         var id: String
         var title: String
         var color: Color
+        var isOnByDefault: Bool
     }
 
     private struct AccountGroup: Identifiable {
@@ -16,14 +18,14 @@ struct CalendarsView: View {
     }
 
     @State private var groups: [AccountGroup] = []
-    @State private var hidden: Set<String> = []
+    @State private var choices: [String: Bool] = [:]
     /// Today's event titles, keyed by calendar ID.
     @State private var today: [String: [String]] = [:]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Turn off calendars that aren't your meetings, such as a family calendar or one shared with you. Calendars hidden in Apple's Calendar app are still listed here, so turn them off here too.")
+                Text("Your main calendar is on. Work accounts often include colleagues' shared calendars, and those stay off so their meetings aren't offered as yours. Turn on any others you want, such as a team calendar.")
                     .font(.subheadline)
                     .foregroundStyle(Theme.textSecondary)
                     .padding(.horizontal, 4)
@@ -61,14 +63,10 @@ struct CalendarsView: View {
 
     private func row(_ calendar: CalendarRow) -> some View {
         Toggle(isOn: Binding(
-            get: { !hidden.contains(calendar.id) },
+            get: { choices[calendar.id] ?? calendar.isOnByDefault },
             set: { isOn in
-                if isOn {
-                    hidden.remove(calendar.id)
-                } else {
-                    hidden.insert(calendar.id)
-                }
-                CalendarReader.hiddenCalendarIDs = hidden
+                choices[calendar.id] = isOn
+                CalendarReader.calendarChoices = choices
             }
         )) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -94,18 +92,26 @@ struct CalendarsView: View {
 
     private func load() {
         let reader = CalendarReader.shared
-        let byAccount = Dictionary(grouping: reader.calendars()) { $0.source?.title ?? "Other" }
-        groups = byAccount.keys.sorted().map { account in
+        let mainID = reader.mainCalendarID
+        let calendars = reader.calendars()
+        let byAccount = Dictionary(grouping: calendars) { $0.source?.title ?? "Other" }
+        // Accounts in the order of their first calendar, so the one with the main calendar comes first.
+        var accounts: [String] = []
+        for calendar in calendars where !accounts.contains(calendar.source?.title ?? "Other") {
+            accounts.append(calendar.source?.title ?? "Other")
+        }
+        groups = accounts.map { account in
             AccountGroup(id: account, calendars: (byAccount[account] ?? []).map { calendar in
                 CalendarRow(
                     id: calendar.calendarIdentifier,
-                    title: calendar.title,
-                    color: calendar.cgColor.map { Color(cgColor: $0) } ?? Theme.brand
+                    title: CalendarChoice.displayName(calendar.title),
+                    color: calendar.cgColor.map { Color(cgColor: $0) } ?? Theme.brand,
+                    isOnByDefault: reader.isOnByDefault(calendar, mainID: mainID)
                 )
             })
         }
-        today = Dictionary(grouping: reader.meetingsToday(includingHidden: true)) { $0.calendarID }
+        today = Dictionary(grouping: reader.meetingsToday(fromAllCalendars: true)) { $0.calendarID }
             .mapValues { events in events.map { $0.title.isEmpty ? "Untitled" : $0.title } }
-        hidden = CalendarReader.hiddenCalendarIDs
+        choices = CalendarReader.calendarChoices
     }
 }

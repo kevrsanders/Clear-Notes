@@ -123,6 +123,21 @@ final class PersonNameTests: XCTestCase {
     }
 }
 
+final class CalendarChoiceTests: XCTestCase {
+    func testOnlyYourOwnCalendarsAreOnByDefault() {
+        XCTAssertTrue(CalendarChoice.isOnByDefault(title: "Calendar", isMain: false))
+        XCTAssertTrue(CalendarChoice.isOnByDefault(title: "Home", isMain: true))
+        XCTAssertFalse(CalendarChoice.isOnByDefault(title: "SMITH, Jane (Example Trust)", isMain: false))
+        XCTAssertFalse(CalendarChoice.isOnByDefault(title: "Team rota", isMain: false))
+    }
+
+    func testSharedCalendarNamesAreTidied() {
+        XCTAssertEqual(CalendarChoice.displayName("SMITH, Jane (Example Trust)"), "Jane Smith")
+        XCTAssertEqual(CalendarChoice.displayName("Lee, Sam"), "Sam Lee")
+        XCTAssertEqual(CalendarChoice.displayName("Team rota (Ward 4)"), "Team rota (Ward 4)")
+    }
+}
+
 final class TeamsLinkTests: XCTestCase {
     func testFindsTheJoinLinkInTheInvite() {
         let link = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=abc"
