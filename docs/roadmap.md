@@ -10,6 +10,10 @@ Phase 1 (done) is a private, on-device iPhone app: capture, transcription, speak
 2. **Least privilege.** Ask only for the permissions a feature needs, and only when the user turns that feature on.
 3. **The user sends things out.** Nothing is pushed to Microsoft 365 automatically. The user reviews and taps *Send to Planner* or *Send to To Do*.
 4. **Governance first.** Each integration changes the data flow, so the DPIA needs updating and Information Governance (IG) needs to approve it before use with real meetings.
+5. **General-purpose, not NHS-specific.** NHSmail and the local trust tenant are the first places it will be used, not the product's limits. Every feature has to work for any organisation, and for someone with no work account at all:
+   - Microsoft 365 features work with **any Entra ID tenant**. The tenant and client ID are configuration, not code. There's no NHS-specific logic, wording or defaults.
+   - Organisation controls such as Intune app protection, Conditional Access and admin consent are **switched on by the organisation's own policy**. They aren't hard-coded, and the app behaves normally when they're absent.
+   - Sign-in stays **optional**. Without it, everything on the device keeps working, including recording, notes, minutes, sharing and the share sheet.
 
 ---
 
@@ -152,6 +156,12 @@ Clear Notes isn't a policy-managed app, so both are refused. This is deliberate 
    - Docs: [Intune App SDK for iOS](https://learn.microsoft.com/intune/developer/app-sdk/ios-phase-1), [iOS app protection settings](https://learn.microsoft.com/intune/app-management/protection/ref-settings-ios).
 
 3. **Send straight into Microsoft 365 with Microsoft Graph.** Create an Outlook draft (`Mail.ReadWrite`), save minutes as a Word document to OneDrive or SharePoint (`Files.ReadWrite`), or post to a Teams chat. This skips the phone's clipboard, but it still needs tenant consent, and NHSmail's Conditional Access may also require option 2. It's the same NHSmail approval. **For the local-tenant pilot**, the infrastructure and cyber team can approve it themselves, which is useful if the trust has its own Teams, SharePoint or OneDrive there. Content leaves the iPhone, so the DPIA needs updating.
+
+### Whatever is built stays general (see principle 5)
+- **Intune App SDK:** it only takes effect when a signed-in account's organisation targets the app with an app protection policy. For everyone else, including unmanaged users, App Store installs and other Microsoft 365 tenants, the app behaves exactly as now. Never set `MAMPolicyRequired`, which would block the app without a policy (Apple won't accept that on the App Store either). Support multi-identity if a personal or second account is ever allowed.
+- **Microsoft Graph sharing** (Outlook draft, OneDrive, Teams) works with any tenant: a multi-tenant app registration for general release, or a single-tenant one per organisation, set through build or app configuration. NHSmail is one deployment.
+- **Apple Mail / share sheet / Email minutes** works for anyone, with any mail account.
+- Keep NHS-specific guidance (NHSmail onboarding, DTAC, DSPT) in docs like this one, not in the app.
 
 ### Plan once the gate is answered
 - **NHSmail says yes:** build options 2 and 3 together, prove them against the local tenant with the infrastructure and cyber team, then submit to NHSmail onboarding with that evidence.
