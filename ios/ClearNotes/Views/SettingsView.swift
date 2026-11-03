@@ -14,6 +14,7 @@ enum SettingsKeys {
     static let rememberVoices = "rememberVoices"
     static let useCalendar = "useCalendar"
     static let calendarChoices = "calendarChoices"
+    static let actionSuggestions = "actionSuggestions"
 }
 
 struct SettingsView: View {
@@ -26,6 +27,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
     @AppStorage(SettingsKeys.rememberVoices) private var rememberVoices = false
     @AppStorage(SettingsKeys.useCalendar) private var useCalendar = false
+    @AppStorage(SettingsKeys.actionSuggestions) private var actionSuggestions = ActionSuggestions.default.rawValue
     @State private var calendarBlocked = CalendarReader.isBlocked
     @Query private var voices: [VoiceProfile]
     @State private var isDownloading = false
@@ -61,6 +63,22 @@ struct SettingsView: View {
                         toggle("Transcribe on this iPhone only", systemImage: "lock.iphone", isOn: $requireOnDevice)
                         Divider()
                         toggle("Remind me to tell attendees", systemImage: "person.wave.2", isOn: $showConsentReminder)
+                    }
+
+                    section("Actions", footer: (ActionSuggestions(rawValue: actionSuggestions) ?? .default).explanation + " While recording, tap Mark action or Mark decision just after one is agreed, or say \"action point\" or \"decision point\". Marked moments become open actions and decisions after the meeting.") {
+                        Picker(selection: $actionSuggestions) {
+                            ForEach(ActionSuggestions.allCases) { option in
+                                Text(option.title).tag(option.rawValue)
+                            }
+                        } label: {
+                            Label {
+                                Text("Suggest actions")
+                            } icon: {
+                                Image(systemName: "checklist")
+                                    .foregroundStyle(Theme.brand)
+                            }
+                        }
+                        .tint(Theme.brand)
                     }
 
                     section("Calendar", footer: "Reads today's events from your main calendar, and from any others you turn on in Choose calendars. Colleagues' shared calendars stay off unless you turn them on. Meetings with other people invited come before blocks like WFH or Focus time. Recordings take the meeting's title, invited people are suggested when naming speakers and action owners, and the Teams link is kept for later. Only the title, invited names and Teams link are saved with each meeting. Nothing is sent anywhere.") {

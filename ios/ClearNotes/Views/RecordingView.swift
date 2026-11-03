@@ -71,6 +71,7 @@ struct RecordingView: View {
                         }
                     }
                     .frame(maxHeight: .infinity)
+                    markBar
                     controls
                 }
             }
@@ -242,6 +243,49 @@ struct RecordingView: View {
         .padding(14)
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(.white.opacity(0.08)))
+    }
+
+    /// One tap, just after something is agreed, marks it. After the meeting the moments before
+    /// each mark become an action or decision.
+    private var markBar: some View {
+        HStack(spacing: 10) {
+            markButton(.action, title: "Mark action", systemImage: "checkmark.circle.fill")
+            markButton(.decision, title: "Mark decision", systemImage: "signpost.right.fill")
+        }
+        .sensoryFeedback(.success, trigger: recorder.marks.count)
+    }
+
+    private func markButton(_ kind: MeetingMark.Kind, title: String, systemImage: String) -> some View {
+        let count = recorder.marks.filter { $0.kind == kind }.count
+        return Button {
+            recorder.mark(kind)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                Text(title)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.caption.weight(.bold).monospacedDigit())
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(.white.opacity(0.2), in: Capsule())
+                        .contentTransition(.numericText())
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .glass(in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isRecording)
+        .opacity(isRecording ? 1 : 0.5)
+        .accessibilityLabel(title)
+        .accessibilityValue(count > 0 ? "\(count) marked" : "")
+        .accessibilityHint("Tap just after it's agreed")
     }
 
     private var controls: some View {

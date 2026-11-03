@@ -36,6 +36,23 @@ struct Speaker: Codable, Hashable, Identifiable, Sendable {
     var displayName: String { name ?? "Speaker \(number)" }
 }
 
+/// A moment marked while recording: a tap on Mark action or Mark decision just after one was
+/// agreed, or a spoken phrase such as "action point". Times match the transcript's.
+struct MeetingMark: Codable, Hashable, Identifiable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        case action, decision
+    }
+
+    enum Source: String, Codable, Sendable {
+        case tap, spoken
+    }
+
+    var id = UUID()
+    var kind: Kind
+    var time: TimeInterval
+    var source: Source = .tap
+}
+
 /// A stretch of the meeting about one subject, e.g. "Launch timing" from 6:40 to 14:05.
 struct Topic: Codable, Hashable, Identifiable, Sendable {
     var id = UUID()
@@ -84,6 +101,8 @@ final class Meeting {
     var revision: Int = 0
     /// Names of people invited, from the calendar event the recording was linked to.
     var attendees: [String] = []
+    /// Moments the user marked as actions or decisions while recording.
+    var marks: [MeetingMark] = []
     /// The Teams join link from the invite, kept for importing the Teams transcript later.
     var teamsJoinURL: String?
 
@@ -273,6 +292,33 @@ final class Meeting {
         }
         speakers = speakers.filter { $0.id != id }
         didEditSpeakers()
+    }
+
+    // MARK: - Decisions and actions
+
+    /// Turns an action into a decision, for one that was really something agreed.
+    func makeDecision(from action: ActionItem) {
+        decisions = decisions + [action.text]
+        actions.removeAll { $0.persistentModelID == action.persistentModelID }
+        modelContext?.delete(action)
+        try? modelContext?.save()
+    }
+
+    /// Turns a decision into an open action, for one that was really a task.
+    func makeAction(fromDecisionAt index: Int) {
+        guard decisions.indices.contains(index) else { return }
+        let action = ActionItem(text: decisions[index], status: .open)
+        modelContext?.insert(action)
+        actions.append(action)
+        var remaining = decisions
+        remaining.remove(at: index)
+        decisions = remaining
+        try? modelContext?.save()
+    }
+
+    /// The transcript line being spoken at a moment, e.g. where a mark was made.
+    func segment(at time: TimeInterval) -> TranscriptSegment? {
+        segments.last { $0.start <= time } ?? segments.first
     }
 
     /// Moves one line of the transcript to a different speaker.

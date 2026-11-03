@@ -7,6 +7,8 @@ struct RecordingResult {
     var segments: [TranscriptSegment]
     /// Temporary audio for speaker separation, if it was captured.
     var audioFileName: String?
+    /// Moments marked as actions or decisions while recording.
+    var marks: [MeetingMark] = []
 }
 
 enum RecorderError: LocalizedError {
@@ -73,6 +75,7 @@ final class MeetingRecorder {
     private(set) var elapsed: TimeInterval = 0
     private(set) var levels: [Float] = Array(repeating: 0, count: 40)
     private(set) var isOnDevice = false
+    private(set) var marks: [MeetingMark] = []
 
     private let minChunkLength: TimeInterval = 10
     private let maxChunkLength: TimeInterval = 50
@@ -162,6 +165,7 @@ final class MeetingRecorder {
         liveText = ""
         accumulated = 0
         elapsed = 0
+        marks = []
 
         if captureAudioForSpeakers {
             let name = RecordingStore.newFileName()
@@ -268,7 +272,13 @@ final class MeetingRecorder {
         elapsed = accumulated
         let fileName = audioFileName
         audioFileName = nil
-        return RecordingResult(duration: accumulated, segments: segments, audioFileName: fileName)
+        return RecordingResult(duration: accumulated, segments: segments, audioFileName: fileName, marks: marks)
+    }
+
+    /// Notes the current moment as an action or decision, e.g. just after one was agreed.
+    func mark(_ kind: MeetingMark.Kind) {
+        guard state == .recording else { return }
+        marks.append(MeetingMark(kind: kind, time: currentTime))
     }
 
     func discard() {

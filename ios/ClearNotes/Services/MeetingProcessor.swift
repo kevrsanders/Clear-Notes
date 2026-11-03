@@ -60,7 +60,10 @@ enum MeetingProcessor {
             insights.note = "Apple Intelligence couldn't write these notes because \(NotesEnhancers.reason(for: error)), so basic extraction was used. Try again for fuller notes."
             source = basic.sourceName
         }
-        apply(insights, to: meeting)
+        // Moments marked while recording (taps and spoken phrases) become actions and decisions.
+        let marks = meeting.marks + SpokenMarks.find(in: meeting.segments, besides: meeting.marks)
+        let marked = await MarkWriter.write(marks, segments: meeting.segments, speakers: meeting.speakers)
+        apply(insights, marked: marked, to: meeting)
         meeting.insightsSource = source
         meeting.notesCaveat = insights.note
         meeting.processingState = .ready
@@ -158,14 +161,18 @@ enum MeetingProcessor {
         }
     }
 
-    static func apply(_ insights: MeetingInsights, to meeting: Meeting) {
+    static func apply(_ insights: MeetingInsights, marked: MarkedItems = MarkedItems(), to meeting: Meeting) {
         if let title = insights.title?.trimmingCharacters(in: .whitespacesAndNewlines),
            !title.isEmpty,
            meeting.title == Meeting.defaultTitle(for: meeting.createdAt) {
             meeting.title = title
         }
         meeting.summary = insights.summary
-        meeting.decisions = insights.decisions
+        // Marked decisions first, then ones the notes found that don't repeat them.
+        let found = insights.decisions.filter { decision in
+            !marked.decisions.contains { ActionList.similar($0, decision) }
+        }
+        meeting.decisions = marked.decisions + found
         meeting.topics = insights.topics
 
         // Replace earlier suggestions, but keep anything the user has already reviewed.
@@ -174,20 +181,55 @@ enum MeetingProcessor {
             meeting.modelContext?.delete(stale)
         }
         let known = Set(reviewed.map { $0.text.lowercased() })
+        let knownMarks = Set(reviewed.compactMap(\.markID))
         let speakerNames = meeting.speakers.compactMap(\.name)
-        let suggestions = ActionList.deduplicated(insights.actions)
-            .filter { !known.contains($0.task.lowercased()) }
+        let matchOwner: (String?) -> String? = { name in
+            name.map { OwnerMatcher.match($0, speakers: speakerNames, attendees: meeting.attendees) }
+        }
+
+        // What the user marked is an action already, so it's open rather than waiting for review.
+        let markedActions = marked.actions
+            .filter { action in action.markID.map { !knownMarks.contains($0) } ?? true }
             .map { extracted in
-                ActionItem(
+                let item = ActionItem(
                     text: extracted.task,
-                    owner: extracted.owner.map { OwnerMatcher.match($0, speakers: speakerNames, attendees: meeting.attendees) },
+                    owner: matchOwner(extracted.owner),
                     due: extracted.due,
-                    status: .suggested,
-                    sourceSegmentID: meeting.segments.segment(matching: extracted.evidence)?.id
+                    status: .open,
+                    sourceSegmentID: sourceSegmentID(forMark: extracted.markID, in: meeting)
+                        ?? meeting.segments.segment(matching: extracted.evidence)?.id
                 )
+                item.markID = extracted.markID
+                return item
             }
-        suggestions.forEach { meeting.modelContext?.insert($0) }
-        meeting.actions = reviewed + suggestions
+
+        let suggestions = ActionPolicy.suggestions(
+            from: insights.actions,
+            decisions: meeting.decisions,
+            marked: marked.actions,
+            duration: meeting.duration,
+            setting: .current
+        )
+        .filter { !known.contains($0.task.lowercased()) }
+        .map { extracted in
+            ActionItem(
+                text: extracted.task,
+                owner: matchOwner(extracted.owner),
+                due: extracted.due,
+                status: .suggested,
+                sourceSegmentID: meeting.segments.segment(matching: extracted.evidence)?.id
+            )
+        }
+        (markedActions + suggestions).forEach { meeting.modelContext?.insert($0) }
+        meeting.actions = reviewed + markedActions + suggestions
+    }
+
+    /// The transcript line a mark was made at. A spoken mark takes its line's ID.
+    private static func sourceSegmentID(forMark id: UUID?, in meeting: Meeting) -> UUID? {
+        guard let id else { return nil }
+        if meeting.segments.contains(where: { $0.id == id }) { return id }
+        guard let mark = meeting.marks.first(where: { $0.id == id }) else { return nil }
+        return meeting.segment(at: mark.time)?.id
     }
 }
 

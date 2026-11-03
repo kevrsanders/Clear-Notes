@@ -242,6 +242,7 @@ struct MeetingsListView: View {
             segments: result.segments,
             pendingAudioFileName: separatesSpeakers ? result.audioFileName : nil
         )
+        meeting.marks = result.marks
         if let event {
             meeting.link(to: event)
         }

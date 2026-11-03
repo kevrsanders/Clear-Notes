@@ -22,10 +22,28 @@ struct ChunkInsights {
     var topic: String
     @Guide(description: "Up to six main points discussed, each a short sentence")
     var keyPoints: [String]
-    @Guide(description: "Decisions that were clearly agreed. Leave empty if none.")
+    @Guide(description: "Decisions that were clearly agreed, each written as what was decided. Not tasks for a person. Leave empty if none.")
     var decisions: [String]
-    @Guide(description: "At most three tasks that someone clearly committed to or was clearly asked to do. Not general discussion, ideas or things that might happen. Leave empty if none.")
+    @Guide(description: "At most three tasks that a person clearly promised to do ('I'll…') or was clearly asked to do ('Can you…'). Never a discussion point, idea, general need or decision. Most parts of a meeting have none: leave empty unless you're sure.")
     var actions: [GeneratedAction]
+}
+
+@available(iOS 26.0, *)
+@Generable
+struct MarkedActionText {
+    @Guide(description: "The one task agreed just before the mark, starting with a verb, e.g. 'Send the revised budget to finance'")
+    var task: String
+    @Guide(description: "The name of the person who will do it, or an empty string if nobody was named. Never a label like 'Speaker 2'.")
+    var owner: String
+    @Guide(description: "The deadline exactly as it was said, or an empty string if none was given")
+    var due: String
+}
+
+@available(iOS 26.0, *)
+@Generable
+struct MarkedDecisionText {
+    @Guide(description: "The one decision agreed just before the mark, written as what was decided")
+    var decision: String
 }
 
 @available(iOS 26.0, *)
@@ -67,7 +85,9 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         You help people turn meeting transcripts into clear notes. \
         Only include points, decisions and actions that are actually stated in the transcript. \
         Each transcript line starts with a time and the speaker. When someone says "I will" or "I'll", \
-        they are the owner of that action. Never invent names, dates or tasks. Write in plain British English.
+        they are the owner of that action. A decision is something the group agreed; an action is a task \
+        a person will do. Never list the same thing as both. Never invent names, dates or tasks. \
+        Write in plain British English.
         """
 
     /// Why Apple Intelligence couldn't handle something, worded to follow "because", with "it"
@@ -161,6 +181,32 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
             topics: topics.count > 1 ? topics.filter { !$0.title.isEmpty } : [],
             note: note
         )
+    }
+
+    // MARK: - Marked moments
+
+    /// Writes the action agreed just before a mark, or nil if the model can't (the caller then
+    /// uses rule-based extraction).
+    func markedAction(excerpt: String, markedAt: String, spoken: Bool) async -> ExtractedAction? {
+        let how = spoken ? "someone said an action phrase at \(markedAt)" : "the note-taker tapped Mark action at \(markedAt)"
+        let prompt = "In this meeting excerpt, \(how), just after an action was agreed. Write that one action.\n\nExcerpt:\n\(excerpt)"
+        guard let result = try? await generate(prompt, as: MarkedActionText.self) else { return nil }
+        let task = NotesText.plain(result.task)
+        guard !task.isEmpty else { return nil }
+        return ExtractedAction(
+            task: task,
+            owner: result.owner.isEmpty ? nil : NotesText.plain(result.owner),
+            due: result.due.isEmpty ? nil : NotesText.plain(result.due)
+        )
+    }
+
+    /// Writes the decision agreed just before a mark, or nil if the model can't.
+    func markedDecision(excerpt: String, markedAt: String, spoken: Bool) async -> String? {
+        let how = spoken ? "someone said a decision phrase at \(markedAt)" : "the note-taker tapped Mark decision at \(markedAt)"
+        let prompt = "In this meeting excerpt, \(how), just after a decision was agreed. Write that one decision.\n\nExcerpt:\n\(excerpt)"
+        guard let result = try? await generate(prompt, as: MarkedDecisionText.self) else { return nil }
+        let decision = NotesText.plain(result.decision)
+        return decision.isEmpty ? nil : decision
     }
 
     // MARK: - Parts

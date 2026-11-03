@@ -465,8 +465,20 @@ struct MeetingDetailView: View {
                                 .background(Theme.success, in: Circle())
                             Text(decision)
                                 .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            Button {
+                                withAnimation(.snappy) { meeting.makeAction(fromDecisionAt: index) }
+                            } label: {
+                                Label("Make it an action", systemImage: "checklist")
+                            }
                         }
                     }
+                    Text("Hold a decision to make it an action.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textTertiary)
                 }
             }
         }
@@ -552,7 +564,11 @@ struct MeetingDetailView: View {
             Eyebrow(title)
                 .padding(.top, 6)
             ForEach(items) { action in
-                ActionCard(action: action, onShowSource: sourceHandler(for: action))
+                ActionCard(
+                    action: action,
+                    onShowSource: sourceHandler(for: action),
+                    onMakeDecision: { meeting.makeDecision(from: action) }
+                )
             }
         }
     }

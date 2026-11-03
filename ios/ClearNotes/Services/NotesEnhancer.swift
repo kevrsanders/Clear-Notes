@@ -6,6 +6,8 @@ struct ExtractedAction: Equatable, Sendable {
     var due: String?
     /// A short quote from the transcript supporting the action, used to link back to the source.
     var evidence: String?
+    /// Set when the user marked this action while recording.
+    var markID: UUID?
 }
 
 struct MeetingInsights: Equatable, Sendable {
@@ -119,7 +121,15 @@ enum ActionList {
                 kept.append((action, words))
             }
         }
-        return kept.map(\.action)
+        return kept.map { $0.action }
+    }
+
+    /// Mostly the same words, e.g. an action that repeats a decision.
+    static func similar(_ first: String, _ second: String) -> Bool {
+        let firstWords = significantWords(first)
+        let secondWords = significantWords(second)
+        guard !firstWords.isEmpty, !secondWords.isEmpty else { return false }
+        return Double(firstWords.intersection(secondWords).count) / Double(firstWords.union(secondWords).count) >= 0.6
     }
 
     private static func sameOrUnknownOwner(_ first: String?, _ second: String?) -> Bool {
