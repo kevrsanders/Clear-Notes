@@ -121,12 +121,23 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
     }
 
     func enhance(segments: [TranscriptSegment], speakers: [Speaker], userNotes: String) async throws -> MeetingInsights {
+        try await enhance(segments: segments, speakers: speakers, userNotes: userNotes, progress: nil)
+    }
+
+    func enhance(
+        segments: [TranscriptSegment],
+        speakers: [Speaker],
+        userNotes: String,
+        progress: NotesProgress?
+    ) async throws -> MeetingInsights {
         let labels = Dictionary(uniqueKeysWithValues: speakers.map { ($0.id, $0.displayName) })
         let notes = String(userNotes.prefix(notesCharacterLimit))
 
-        var parts: [PartResult] = []
-        for chunk in chunks(of: segments, labels: labels) {
-            parts += try await extract(chunk, notes: notes, speakers: speakers, labels: labels, allowSplit: true)
+        // Each part is saved as soon as it's written, so if iOS pauses Clear Notes part-way through
+        // a long meeting, the notes carry on from the next part rather than starting again.
+        let allChunks = chunks(of: segments, labels: labels)
+        let parts = try await PartByPart.run(allChunks.map(\.text), notes: notes, progress: progress) { index in
+            try await extract(allChunks[index], notes: notes, speakers: speakers, labels: labels, allowSplit: true)
         }
 
         let decisions = parts.flatMap(\.decisions)
@@ -156,6 +167,9 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
+                // In the background this is usually iOS limiting Clear Notes, so pause and write the
+                // summary properly when the app is open, rather than settling for a list of points.
+                if await !AppActivity.isActive { throw NotesEnhancerError.busy }
                 summary = points.prefix(5).map { "- \($0)" }.joined(separator: "\n")
                 let reason = Self.reason(for: error)
                 if !reasons.contains(reason) { reasons.append(reason) }
@@ -226,17 +240,6 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         }
     }
 
-    private struct PartResult {
-        var topic: String
-        var keyPoints: [String]
-        var decisions: [String]
-        var actions: [ExtractedAction]
-        var start: TimeInterval
-        var end: TimeInterval
-        /// Set when this part used basic extraction, saying why.
-        var basicReason: String?
-    }
-
     /// Splits the transcript into parts small enough for the model. Each part becomes a topic.
     private func chunks(of segments: [TranscriptSegment], labels: [String: String]) -> [Chunk] {
         var groups: [[TranscriptSegment]] = []
@@ -262,7 +265,7 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         speakers: [Speaker],
         labels: [String: String],
         allowSplit: Bool
-    ) async throws -> [PartResult] {
+    ) async throws -> [NotesPart] {
         var prompt = "Extract the key points, decisions and actions from this part of a meeting transcript.\n\n"
         if !notes.isEmpty {
             prompt += "The note-taker wrote these notes, which show what they thought mattered:\n\(notes)\n\n"
@@ -271,7 +274,7 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
 
         do {
             let result = try await generate(prompt, as: ChunkInsights.self)
-            return [PartResult(
+            return [NotesPart(
                 topic: NotesText.plain(result.topic),
                 keyPoints: result.keyPoints.map(NotesText.plain).filter { !$0.isEmpty },
                 decisions: result.decisions.map(NotesText.plain).filter { !$0.isEmpty },
@@ -299,6 +302,12 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
                 let firstResults = try await extract(first, notes: notes, speakers: speakers, labels: labels, allowSplit: false)
                 let secondResults = try await extract(second, notes: notes, speakers: speakers, labels: labels, allowSplit: false)
                 return firstResults + secondResults
+            }
+            // In the background a failure is usually iOS limiting Clear Notes rather than a problem
+            // with this part, so pause instead of saving basic notes for it. Safety blocks are
+            // the same whenever they're tried, so they're handled now.
+            if !Self.isSafetyBlock(error), await !AppActivity.isActive {
+                throw NotesEnhancerError.busy
             }
             if Self.isSafetyBlock(error), let points = try? await permissiveKeyPoints(for: chunk), !points.isEmpty {
                 // Apple's summarising mode wrote the key points; rules find this part's decisions and actions.
@@ -330,14 +339,14 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
     }
 
     /// Rule-based extraction for one part the model couldn't handle.
-    private func basicPart(_ chunk: Chunk, speakers: [Speaker], reason: String?) async throws -> PartResult {
+    private func basicPart(_ chunk: Chunk, speakers: [Speaker], reason: String?) async throws -> NotesPart {
         let basic = try await HeuristicEnhancer().enhance(segments: chunk.segments, speakers: speakers, userNotes: "")
         let points = basic.summary
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { $0.hasPrefix("- ") }
             .map { String($0.dropFirst(2)) }
-        return PartResult(
+        return NotesPart(
             topic: "",
             keyPoints: points,
             decisions: basic.decisions,

@@ -117,6 +117,15 @@ final class Meeting {
     /// How the minutes were written, e.g. by Apple Intelligence on this iPhone.
     var minutesSource: String?
     var minutesWrittenAt: Date?
+    /// Parts of the notes already written (see `NotesCheckpoint`), so a long meeting's notes carry
+    /// on where they stopped if iOS pauses Clear Notes. Cleared when the notes are finished.
+    var notesProgressData: Data?
+    /// How many parts of the notes are written, for "Part 12 of 38".
+    var notesPartsDone: Int = 0
+    var notesPartsTotal: Int = 0
+    /// Times the more accurate second pass has been started, so a pass that keeps failing or
+    /// being interrupted isn't repeated on every restart.
+    var accuratePassAttempts: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []

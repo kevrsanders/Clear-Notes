@@ -418,6 +418,12 @@ struct MeetingCard: View {
             .joined(separator: " ")
     }
 
+    /// "Processing", or "Notes 12/38" while a long meeting's notes are written.
+    private var processingText: String {
+        guard meeting.processingStage == .notes, meeting.notesPartsTotal > 1 else { return "Processing" }
+        return "Notes \(min(meeting.notesPartsDone + 1, meeting.notesPartsTotal))/\(meeting.notesPartsTotal)"
+    }
+
     private var speakerLine: String {
         let names = meeting.speakers.map(\.displayName)
         guard names.count > 2 else { return names.joined(separator: ", ") }
@@ -475,7 +481,8 @@ struct MeetingCard: View {
         case .processing:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
-                Text("Processing")
+                Text(processingText)
+                    .monospacedDigit()
             }
             .font(.caption.weight(.semibold))
             .foregroundStyle(Theme.brand)

@@ -11,7 +11,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.2.7"
+    MARKETING_VERSION: "0.2.8"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   ClearNotes:
@@ -42,6 +42,9 @@ targets:
         NSSpeechRecognitionUsageDescription: Clear Notes turns speech into a written transcript on this iPhone.
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
+        # iOS 26: lets meeting processing carry on in the background (ContinuedProcessing.swift).
+        BGTaskSchedulerPermittedIdentifiers:
+          - $(PRODUCT_BUNDLE_IDENTIFIER).notes.*
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.clearnotes.app

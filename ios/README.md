@@ -27,7 +27,7 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
 - **Decision or action?** A suggested action has a *Decision* button. Hold any action to make it a decision, or hold a decision to make it an action.
 - **Your own notes** alongside the transcript, with quick **Action** and **Decision** buttons that add time-stamped lines.
 - **AI notes on the device**:
-  - On iPhones with Apple Intelligence (iOS 26+), the on-device Foundation Models framework writes a title, summary, decisions and actions. Long meetings are processed in parts.
+  - On iPhones with Apple Intelligence (iOS 26+), the on-device Foundation Models framework writes a title, summary, decisions and actions. Long meetings are processed in parts (about 10–20 minutes for a two-hour meeting with the app open). Each part is saved as soon as it's written, so if iOS pauses Clear Notes the notes carry on from the next part instead of starting again. The processing card shows "Part 12 of 38" (the meeting list shows "Notes 12/38"), and the screen stays on while it's showing. On iOS 26, processing that started while the app was open can carry on in the background for a while, with progress on the Lock Screen. If Apple Intelligence declines in the background, the notes pause rather than settle for basic ones, and finish when Clear Notes is opened. The more accurate transcript pass is tried at most twice per meeting.
     - When the system is busy (Apple limits apps in the background most), it waits and retries. If Clear Notes is in the background, the notes finish the next time you open it.
     - A part that's too long is split in two. A part the model declines, such as one Apple's safety filter blocks, gets basic extraction instead.
     - If Apple Intelligence can't finish at all, you get basic notes. *About these notes* says why and offers *Try Apple Intelligence again*.
@@ -101,6 +101,7 @@ ios/
 ## Known limits in Phase 1
 
 - **Speaker separation works best with 2–6 people in a quiet room.** It gets worse when people talk over each other, the room echoes, or someone is on a speakerphone far from the iPhone. Speakers are identified after the meeting, not live.
+- **Notes are written fastest with Clear Notes open.** iOS limits Apple Intelligence for apps in the background, so a long meeting's notes may pause until you open the app again; nothing already written is lost.
 - **Very long meetings use more memory** while speakers are identified (about 230 MB per hour of audio).
 - **Microphone capture only.** For online calls, run the call on speaker (or another device) near the iPhone. iOS doesn't let apps capture other apps' call audio.
 - **Rules-based extraction is basic.** It finds clear commitments and decisions but will miss some and suggest some false positives. This is why every suggestion is reviewed.

@@ -15,61 +15,62 @@ enum MeetingProcessor {
         guard inFlight.insert(meeting.persistentModelID).inserted else { return }
         defer { inFlight.remove(meeting.persistentModelID) }
 
-        // Ask iOS for time to finish if the user leaves the app straight after recording.
+        // Ask iOS for time to finish if the user leaves the app straight after recording. On
+        // iOS 26 it can carry on for longer, with its progress shown by the system.
         let backgroundTime = BackgroundTime(name: "Process meeting")
         defer { backgroundTime.end() }
+        let continued = ContinuedProcessing.shared
+        if AppActivity.isActive {
+            continued.begin()
+        }
 
         meeting.processingState = .processing
         meeting.processingError = nil
+        func stage(_ next: ProcessingStage) {
+            meeting.processingStage = next
+            continued.update(meeting)
+        }
 
-        // A second, more accurate transcription of a new recording, once, before speakers are found.
+        // A second, more accurate transcription of a new recording, before speakers are found. At
+        // most twice, so one that keeps failing or being interrupted isn't redone on every restart.
         let isNew = meeting.pendingAudioFileName != nil || meeting.insightsSource == nil
-        if isNew, !meeting.transcriptImproved, AccurateTranscriber.isReady,
+        if isNew, !meeting.transcriptImproved, meeting.accuratePassAttempts < 2, AccurateTranscriber.isReady,
            let url = meeting.pendingAudioFileName.map({ RecordingStore.url(for: $0) }) ?? meeting.playableAudioURL {
-            meeting.processingStage = .transcript
+            stage(.transcript)
+            meeting.accuratePassAttempts += 1
+            try? meeting.modelContext?.save()
             await applyAccurateTranscript(to: meeting, from: url)
         }
 
         if let fileName = meeting.pendingAudioFileName {
-            meeting.processingStage = .speakers
+            stage(.speakers)
             await identifySpeakers(in: meeting, audioFileName: fileName, separator: separator)
         }
 
         // Names and terms from My words and the people in the meeting, now lines and speakers are settled.
         applyVocabulary(to: meeting)
 
-        meeting.processingStage = .notes
-        var insights: MeetingInsights
-        var source = enhancer.sourceName
-        do {
-            insights = try await enhancer.enhance(
-                segments: meeting.segments,
-                speakers: meeting.speakers,
-                userNotes: meeting.userNotes
-            )
-        } catch {
-            if (error as? NotesEnhancerError) == .busy, UIApplication.shared.applicationState != .active {
-                // Apple Intelligence limits apps in the background. The meeting stays in progress
-                // and finishes when Clear Notes is next opened.
-                return
-            }
-            // Basic notes are better than none, so fall back when Apple Intelligence can't finish.
-            let basic = HeuristicEnhancer()
-            guard !(enhancer is HeuristicEnhancer),
-                  let fallback = try? await basic.enhance(
-                      segments: meeting.segments,
-                      speakers: meeting.speakers,
-                      userNotes: meeting.userNotes
-                  )
-            else {
-                meeting.processingError = error.localizedDescription
-                meeting.processingState = .failed
-                meeting.processingStage = nil
-                return
-            }
-            insights = fallback
-            insights.note = "Apple Intelligence couldn't write these notes because \(NotesEnhancers.reason(for: error)), so basic extraction was used. Try again for fuller notes."
-            source = basic.sourceName
+        meeting.notesPartsDone = 0
+        meeting.notesPartsTotal = 0
+        stage(.notes)
+        let insights: MeetingInsights
+        let source: String
+        switch await writeNotes(for: meeting, with: enhancer) {
+        case .written(let written, let writtenBy):
+            insights = written
+            source = writtenBy
+        case .paused:
+            // Apple Intelligence limits apps in the background. The meeting stays in progress, its
+            // finished parts are saved, and it carries on when Clear Notes is next opened.
+            try? meeting.modelContext?.save()
+            continued.finish(.paused)
+            return
+        case .failed(let message):
+            meeting.processingError = message
+            meeting.processingState = .failed
+            meeting.processingStage = nil
+            continued.finish(.failed)
+            return
         }
         // Moments marked while recording (taps and spoken phrases) become actions and decisions.
         let marks = meeting.marks + SpokenMarks.find(in: meeting.segments, besides: meeting.marks)
@@ -80,6 +81,59 @@ enum MeetingProcessor {
         meeting.processingState = .ready
         meeting.notesNeedRefresh = false
         meeting.processingStage = nil
+        meeting.notesProgressData = nil
+        meeting.notesPartsDone = 0
+        meeting.notesPartsTotal = 0
+        try? meeting.modelContext?.save()
+        continued.finish(.done)
+    }
+
+    private enum NotesOutcome {
+        case written(MeetingInsights, source: String)
+        case paused
+        case failed(String)
+    }
+
+    /// Writes the notes, saving each part as it's finished. When Apple Intelligence is busy with the
+    /// app open, it waits and tries again (finished parts aren't redone) before settling for basic
+    /// notes; in the background it pauses instead.
+    private static func writeNotes(for meeting: Meeting, with enhancer: NotesEnhancer) async -> NotesOutcome {
+        let progress = MeetingNotesProgress(meeting: meeting)
+        var busyRetries = 0
+        while true {
+            do {
+                let insights = try await enhancer.enhance(
+                    segments: meeting.segments,
+                    speakers: meeting.speakers,
+                    userNotes: meeting.userNotes,
+                    progress: progress
+                )
+                return .written(insights, source: enhancer.sourceName)
+            } catch {
+                let busy = (error as? NotesEnhancerError) == .busy
+                if busy, !AppActivity.isActive {
+                    return .paused
+                }
+                if busy, progress.hasSavedParts, busyRetries < 2 {
+                    busyRetries += 1
+                    try? await Task.sleep(for: .seconds(30))
+                    continue
+                }
+                // Basic notes are better than none, so fall back when Apple Intelligence can't finish.
+                let basic = HeuristicEnhancer()
+                guard !(enhancer is HeuristicEnhancer),
+                      var fallback = try? await basic.enhance(
+                          segments: meeting.segments,
+                          speakers: meeting.speakers,
+                          userNotes: meeting.userNotes
+                      )
+                else {
+                    return .failed(error.localizedDescription)
+                }
+                fallback.note = "Apple Intelligence couldn't write these notes because \(NotesEnhancers.reason(for: error)), so basic extraction was used. Try again for fuller notes."
+                return .written(fallback, source: basic.sourceName)
+            }
+        }
     }
 
     /// Finishes meetings that were still processing when the app was closed, deletes recordings
@@ -313,6 +367,43 @@ enum MeetingProcessor {
         if meeting.segments.contains(where: { $0.id == id }) { return id }
         guard let mark = meeting.marks.first(where: { $0.id == id }) else { return nil }
         return meeting.segment(at: mark.time)?.id
+    }
+}
+
+/// Saves each finished part of a meeting's notes on the meeting, and keeps its progress up to date.
+@MainActor
+final class MeetingNotesProgress: NotesProgress {
+    private let meeting: Meeting
+    private var saved: [String: [NotesPart]]
+
+    init(meeting: Meeting) {
+        self.meeting = meeting
+        saved = NotesCheckpoint.decode(meeting.notesProgressData)
+    }
+
+    var hasSavedParts: Bool { !saved.isEmpty }
+
+    func savedParts(for key: String) async -> [NotesPart]? {
+        saved[key]
+    }
+
+    func save(_ parts: [NotesPart], for key: String) async {
+        saved[key] = parts
+        meeting.notesProgressData = NotesCheckpoint.encode(saved)
+        try? meeting.modelContext?.save()
+    }
+
+    func update(done: Int, of total: Int) async {
+        meeting.notesPartsDone = done
+        meeting.notesPartsTotal = total
+        ContinuedProcessing.shared.update(meeting)
+    }
+}
+
+/// Whether Clear Notes is on screen. Apple Intelligence limits apps in the background.
+enum AppActivity {
+    @MainActor static var isActive: Bool {
+        UIApplication.shared.applicationState == .active
     }
 }
 

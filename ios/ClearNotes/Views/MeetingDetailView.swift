@@ -904,12 +904,14 @@ private struct ProcessingCard: View {
         stage == .transcript || meeting.transcriptImproved
     }
     private var progress: Double {
-        switch stage {
-        case .transcript: 0.25
-        case .speakers: 0.45
-        case .notes: 0.75
-        case nil: 0.15
-        }
+        ProcessingProgress.fraction(stage: stage, partsDone: meeting.notesPartsDone, partsTotal: meeting.notesPartsTotal)
+    }
+    private var notesDetail: String {
+        let engine = NotesEnhancers.isAppleIntelligenceAvailable ? "Apple Intelligence, on this iPhone" : "On this iPhone"
+        guard stage == .notes,
+              let part = ProcessingProgress.notesDetail(partsDone: meeting.notesPartsDone, partsTotal: meeting.notesPartsTotal)
+        else { return engine }
+        return "\(part) · \(engine)"
     }
     private var wordCount: Int {
         meeting.segments.reduce(0) { $0 + $1.text.split(separator: " ").count }
@@ -935,7 +937,7 @@ private struct ProcessingCard: View {
                 }
                 step(
                     "Writing summary and actions",
-                    detail: NotesEnhancers.isAppleIntelligenceAvailable ? "Apple Intelligence, on this iPhone" : "On this iPhone",
+                    detail: notesDetail,
                     state: stage == .notes ? .active : .pending
                 )
                 Label(AudioRetention.current.promise, systemImage: "lock.fill")
@@ -944,12 +946,24 @@ private struct ProcessingCard: View {
             }
             .cardStyle()
 
-            Text("You can leave this screen. Notes keep processing in the background.")
+            Text(footnote)
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity)
                 .multilineTextAlignment(.center)
         }
+        // Auto-lock would put Clear Notes in the background, where iOS pauses it, so the screen
+        // stays on while this card is showing.
+        .onAppear { ScreenAwake.hold() }
+        .onDisappear { ScreenAwake.release() }
+    }
+
+    private var footnote: String {
+        var text = "Quickest with Clear Notes open: the screen stays on while this shows."
+        if #available(iOS 26.0, *) {
+            text += " If you leave, iOS may let it carry on for a while, with progress on your Lock Screen."
+        }
+        return text + " If iOS pauses it, it carries on from where it stopped when you come back."
     }
 
     private func step(_ title: String, detail: String, state: StepState) -> some View {
