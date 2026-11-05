@@ -181,9 +181,20 @@ final class Meeting {
     /// Takes the title, invited people and Teams link from the calendar event this recording was made in.
     func link(to event: CalendarMeeting) {
         if !event.title.isEmpty { title = event.title }
-        attendees = event.attendees
+        // The person recording was at the meeting, as organiser or attendee, so they're listed
+        // first: by the calendar's name for them, or else their name from Settings.
+        let settingsName = UserDefaults.standard.string(forKey: SettingsKeys.myName)
+        attendees = Self.people(event.attendees, me: event.myName ?? settingsName)
         teamsJoinURL = event.teamsJoinURL?.absoluteString
         seriesID = event.seriesID
+    }
+
+    /// The user first (when their name is known and not already listed), then everyone else.
+    static func people(_ others: [String], me: String?) -> [String] {
+        guard let me = me?.trimmingCharacters(in: .whitespaces), !me.isEmpty,
+              !others.contains(where: { $0.caseInsensitiveCompare(me) == .orderedSame })
+        else { return others }
+        return [me] + others
     }
 
     // MARK: - Recording

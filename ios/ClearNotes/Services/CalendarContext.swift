@@ -18,6 +18,8 @@ struct CalendarMeeting: Equatable, Identifiable, Sendable {
     var calendarName: String?
     /// Shared by every occurrence of a repeating meeting, so earlier ones can be found.
     var seriesID: String?
+    /// The user's own name as the calendar has it (e.g. as the organiser), when it does.
+    var myName: String?
 
     /// Someone else is invited, so it's a meeting rather than a block like "WFH" or "Focus time".
     var hasPeople: Bool { !attendees.isEmpty }
@@ -264,6 +266,7 @@ extension CalendarMeeting {
     init(event: EKEvent, mainCalendarID: String? = nil) {
         let participants = ([event.organizer].compactMap { $0 }) + (event.attendees ?? [])
         let me = participants.first(where: \.isCurrentUser)
+        let myCalendarName = me.flatMap { PersonName.display(name: $0.name, email: Self.email(of: $0)) }
         var seen = Set<String>()
         let people = participants
             .filter { !$0.isCurrentUser && ($0.participantType == .person || $0.participantType == .unknown) }
@@ -285,7 +288,8 @@ extension CalendarMeeting {
             },
             seriesID: event.hasRecurrenceRules || event.isDetached
                 ? (event.eventIdentifier ?? event.calendarItemIdentifier)
-                : nil
+                : nil,
+            myName: myCalendarName
         )
     }
 
