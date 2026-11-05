@@ -1,6 +1,6 @@
 # Clear Notes — Roadmap (Phase 2 onwards)
 
-_Planning notes, not yet built. Last updated 3 November 2026 (sharing into NHSmail Microsoft 365 on hold, see below)._
+_Planning notes, not yet built. Last updated 5 November 2026 (meeting file sharing proposed; web app upload added as a future requirement)._
 
 Phase 1 (done) is a private, on-device iPhone app: capture, transcription, speakers, notes, actions, playback and voice memory. Next we connect it to where work actually happens, mainly Microsoft 365, while keeping the privacy-first design.
 
@@ -83,6 +83,55 @@ A Teams app that lives inside meetings needs hosted components. Plan for a small
 **Not recommended:** a bot that *joins* calls to record them (Teams real-time media). It needs heavyweight Windows-hosted media services, it's the "bot in the meeting" experience users dislike, and it adds the most risk for the least gain over Teams' own transcripts.
 
 **Back-end essentials:** Azure UK South hosting, Entra-protected API, encryption at rest, audit logging, data minimisation (keep only notes and actions, never audio), penetration test, DSPT alignment, and **DTAC** if it's offered across the organisation.
+
+---
+
+## Proposed next: share a meeting as a Clear Notes file (no server)
+
+_Proposed 5 November 2026, waiting for the go-ahead._
+
+- **Share → Share meeting as a Clear Notes file** makes one `.clearnotes` file to send by AirDrop, Messages or Mail. Anyone with Clear Notes taps it, chooses **Open in Clear Notes**, previews it and imports their own editable copy. Re-importing the same meeting offers **Update** or **Keep both**.
+- **Contents:**
+  - Always: title, date, duration and invited people; the transcript with speaker names; summary, topics and decisions; actions (owner, due date, status); minutes.
+  - Off by default: the sender's private notes, and the recording (about 230 MB for two hours).
+  - Never: remembered voiceprints, which are biometric data.
+- **Optional password:** AES-256-GCM with a key derived from the password, so a misdirected email can't be read.
+- **Without the app,** the minutes can go along as readable text.
+- NHSmail's Outlook, OneDrive and Teams will refuse the file while Clear Notes isn't Intune-managed (see *On hold* below).
+- **The file format is designed to be the upload format for the web app below:** a versioned, documented JSON schema (`formatVersion`, stable meeting and action IDs) in `docs/`. The app, the web app and any future import all read the same thing.
+
+## Future: a Clear Notes web app (upload meetings), governance permitting
+
+_Added 5 November 2026 as a future requirement. Not planned in detail until governance agrees._
+
+**What it's for**
+- Upload a meeting from the iPhone to a web app.
+- Read, search and edit notes and minutes on a PC.
+- Export to Word.
+- Keep a team or meeting-series archive.
+- Track actions across meetings.
+- It could share a back end with the Phase 3 Teams app.
+
+**How it would work**
+- **The user chooses each upload:** "Upload to <organisation> Clear Notes". It shows exactly what will be sent, and the user can delete it from the server. Automatic upload stays off unless the organisation turns it on.
+- **It uses the same file format as meeting sharing.** Uploads are the transcript, notes, actions and minutes. Audio and voiceprints are never uploaded by default; audio only if governance explicitly allows it.
+- **Sign-in uses Microsoft Entra ID** with the same app registration (single tenant per organisation, or multi-tenant for general release). Access is by role: owner, attendees, team.
+
+**Hosting and governance (needs a server)**
+- Hosted in the organisation's own cloud, e.g. Azure UK South in the subscription the infrastructure and cyber team owns, with UK data residency.
+- Encryption in transit and at rest, audit logging, and set retention and deletion periods.
+- DPIA update, DSPT alignment, DTAC if offered across the organisation, and a penetration test.
+
+**General-purpose (principle 5)**
+- Any organisation can host its own instance.
+- Nothing NHS-specific is built in. NHS-specific governance stays in documents like this one.
+
+**Open questions for later**
+- Who hosts it?
+- What's uploaded: the full transcript, or only the notes and minutes?
+- How long is it kept?
+- Who can see a meeting: the owner, the attendees or the team?
+- Should audio ever be allowed?
 
 ---
 
@@ -182,6 +231,7 @@ Clear Notes isn't a policy-managed app, so both are refused. This is deliberate 
 | 7 | Mac app with system-audio capture | No |
 | 8 | Teams app: side panel and meeting-chat summary card | **Yes** |
 | 9 | Automatic post-meeting notes from Teams | **Yes** |
+| 10 | Web app: upload meetings for reading, search and editing on a PC (governance permitting; same file format as meeting sharing) | **Yes** |
 
 ## References
 
