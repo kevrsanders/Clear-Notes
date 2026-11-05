@@ -117,6 +117,10 @@ final class Meeting {
     /// How the minutes were written, e.g. by Apple Intelligence on this iPhone.
     var minutesSource: String?
     var minutesWrittenAt: Date?
+    /// Minutes are being written, or paused part-way while Clear Notes was in the background.
+    var minutesInProgress: Bool = false
+    /// Minutes items written so far (see `MinutesCheckpoint`), until the minutes are finished.
+    var minutesProgressData: Data?
     /// Parts of the notes already written (see `NotesCheckpoint`), so a long meeting's notes carry
     /// on where they stopped if iOS pauses Clear Notes. Cleared when the notes are finished.
     var notesProgressData: Data?

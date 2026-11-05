@@ -19,6 +19,9 @@ struct MinutesPane: View {
         VStack(alignment: .leading, spacing: 14) {
             if let progress {
                 writingCard(progress)
+            } else if meeting.minutesInProgress {
+                // Paused while Clear Notes was in the background; carries on straight away.
+                writingCard(MinutesJobs.Progress(part: 0, of: 1))
             } else if meeting.minutes.isEmpty {
                 introCard
             } else {
@@ -39,6 +42,11 @@ struct MinutesPane: View {
                 )
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .task {
+            if meeting.minutesInProgress, progress == nil {
+                jobs.write(meeting, fresh: false)
             }
         }
         .sheet(isPresented: $editing) {
@@ -82,7 +90,11 @@ struct MinutesPane: View {
                      : "Writing the minutes…")
                     .font(.headline)
             }
-            Text("This takes a little while for a long meeting. You can leave this screen; the minutes carry on.")
+            if progress.of > 1 {
+                ProgressView(value: Double(max(progress.part - 1, 0)), total: Double(progress.of))
+                    .tint(Theme.brand)
+            }
+            Text("This takes a little while for a long meeting. The screen stays on while this shows. If you leave Clear Notes, the minutes pause and carry on from the next item when you're back.")
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
             VStack(alignment: .leading, spacing: 10) {
@@ -95,6 +107,9 @@ struct MinutesPane: View {
             }
         }
         .cardStyle()
+        // Auto-lock would put Clear Notes in the background, where Apple Intelligence pauses.
+        .onAppear { ScreenAwake.hold() }
+        .onDisappear { ScreenAwake.release() }
     }
 
     private var toolbar: some View {

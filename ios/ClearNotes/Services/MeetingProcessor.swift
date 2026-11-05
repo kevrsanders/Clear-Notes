@@ -20,9 +20,6 @@ enum MeetingProcessor {
         let backgroundTime = BackgroundTime(name: "Process meeting")
         defer { backgroundTime.end() }
         let continued = ContinuedProcessing.shared
-        if AppActivity.isActive {
-            continued.begin()
-        }
 
         meeting.processingState = .processing
         meeting.processingError = nil
@@ -40,8 +37,16 @@ enum MeetingProcessor {
         // A second, more accurate transcription of a new recording, before speakers are found. At
         // most twice, so one that keeps failing or being interrupted isn't redone on every restart.
         let isNew = meeting.pendingAudioFileName != nil || meeting.insightsSource == nil
-        if isNew, !meeting.transcriptImproved, meeting.accuratePassAttempts < 2, AccurateTranscriber.isReady,
-           let url = meeting.pendingAudioFileName.map({ RecordingStore.url(for: $0) }) ?? meeting.playableAudioURL {
+        let accurateURL: URL? = isNew && !meeting.transcriptImproved && meeting.accuratePassAttempts < 2 && AccurateTranscriber.isReady
+            ? meeting.pendingAudioFileName.map({ RecordingStore.url(for: $0) }) ?? meeting.playableAudioURL
+            : nil
+        // The system's background progress is only for the steps that read the recording: notes
+        // need Clear Notes open, so it would only end with an error there.
+        if accurateURL != nil || meeting.pendingAudioFileName != nil, AppActivity.isActive {
+            continued.begin()
+        }
+
+        if let url = accurateURL {
             guard AppActivity.isUnlocked else { return waitForUnlock() }
             stage(.transcript)
             meeting.accuratePassAttempts += 1
@@ -60,6 +65,9 @@ enum MeetingProcessor {
                 return waitForUnlock()
             }
         }
+
+        // The recording steps are done; the notes are written with Clear Notes open.
+        continued.finish(.readyForNotes)
 
         // Names and terms from My words and the people in the meeting, now lines and speakers are settled.
         applyVocabulary(to: meeting)

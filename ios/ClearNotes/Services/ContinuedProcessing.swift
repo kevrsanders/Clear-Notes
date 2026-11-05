@@ -1,12 +1,14 @@
 import BackgroundTasks
 import Foundation
 
-/// On iOS 26, lets a meeting's processing carry on after the user leaves Clear Notes, with its
-/// progress shown by the system (like a download) where the user can also stop it.
+/// On iOS 26, lets the steps that read the recording (the more accurate transcript and speaker
+/// identification) carry on after the user leaves Clear Notes, with progress shown by the system
+/// in the Dynamic Island and on the Lock Screen.
 ///
-/// iOS decides how long it may run. Apple Intelligence may still decline to write notes in the
-/// background; then the notes pause, their finished parts are kept, and they carry on from where
-/// they stopped when Clear Notes is next opened. On earlier iOS versions this does nothing.
+/// It isn't used for notes or minutes: Apple Intelligence won't write while the app is in the
+/// background, so the system's progress view would only end with a "!". It ends, without an error,
+/// once the recording steps are done. iOS decides how long it may run, and Settings → After
+/// recording turns it off. On earlier iOS versions this does nothing.
 @MainActor
 final class ContinuedProcessing {
     static let shared = ContinuedProcessing()
@@ -31,7 +33,14 @@ final class ContinuedProcessing {
     private var fraction = 0.0
     private var subtitle = "Starting"
     enum Outcome {
+        /// The recording steps are done; the notes need Clear Notes open.
+        case readyForNotes
         case done, paused, waitingForUnlock, failed
+    }
+
+    /// Whether the user wants processing to carry on after they leave the app (on by default).
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: SettingsKeys.continueInBackground) as? Bool ?? true
     }
 
     /// How the work ended, when it ended before the system started the task.
@@ -41,7 +50,7 @@ final class ContinuedProcessing {
     /// as a result of something the user did, e.g. finishing a recording.
     func begin() {
         guard #available(iOS 26.0, *) else { return }
-        guard task == nil, !isPending, !Self.isRunningTests else { return }
+        guard task == nil, !isPending, !Self.isRunningTests, Self.isEnabled else { return }
         // Each request has its own identifier: iOS ends the app if one is registered twice.
         let identifier = Self.identifierPrefix + UUID().uuidString
         let scheduler = BGTaskScheduler.shared
@@ -123,16 +132,27 @@ final class ContinuedProcessing {
         apply(to: started)
     }
 
+    /// The subtitle last shown. Changing the text can make the system show its progress view
+    /// again, so it's only updated when the step changes; the progress ring updates quietly.
+    private var shownSubtitle: String?
+
     @available(iOS 26.0, *)
     private func apply(to task: BGContinuedProcessingTask) {
         task.progress.completedUnitCount = Int64((fraction * 100).rounded())
-        task.updateTitle(task.title, subtitle: subtitle)
+        if subtitle != shownSubtitle {
+            shownSubtitle = subtitle
+            task.updateTitle(task.title, subtitle: subtitle)
+        }
     }
 
     @available(iOS 26.0, *)
     private func complete(_ task: BGContinuedProcessingTask, _ outcome: Outcome) {
         if self.task === task { self.task = nil }
+        shownSubtitle = nil
         switch outcome {
+        case .readyForNotes:
+            task.progress.completedUnitCount = task.progress.totalUnitCount
+            task.updateTitle(task.title, subtitle: "Transcript and speakers done · open Clear Notes for the notes")
         case .done:
             task.progress.completedUnitCount = task.progress.totalUnitCount
             task.updateTitle(task.title, subtitle: "Notes ready")
@@ -143,6 +163,7 @@ final class ContinuedProcessing {
         case .failed:
             task.updateTitle(task.title, subtitle: "Couldn't finish · open Clear Notes")
         }
-        task.setTaskCompleted(success: outcome == .done)
+        // Only a real failure is shown as an error ("!"); a pause the app recovers from isn't.
+        task.setTaskCompleted(success: outcome != .failed)
     }
 }

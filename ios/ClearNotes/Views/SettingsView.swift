@@ -18,6 +18,7 @@ enum SettingsKeys {
     static let accurateTranscripts = "accurateTranscripts"
     static let accurateModelsReady = "accurateModelsReady"
     static let customVocabulary = "customVocabulary"
+    static let continueInBackground = "continueInBackground"
 }
 
 struct SettingsView: View {
@@ -34,6 +35,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.accurateTranscripts) private var accurateTranscripts = false
     @AppStorage(SettingsKeys.accurateModelsReady) private var accurateModelsReady = false
     @AppStorage(SettingsKeys.customVocabulary) private var customVocabulary = ""
+    @AppStorage(SettingsKeys.continueInBackground) private var continueInBackground = true
     @State private var isDownloadingTranscriber = false
     @State private var transcriberError: String?
     @State private var calendarBlocked = CalendarReader.isBlocked
@@ -109,6 +111,12 @@ struct SettingsView: View {
                                 Text("\(Vocabulary.terms(from: customVocabulary).count)")
                                     .foregroundStyle(Theme.textSecondary)
                             }
+                        }
+                    }
+
+                    if #available(iOS 26.0, *) {
+                        section("After recording", footer: "If you leave Clear Notes while the transcript is improved and speakers are identified, iOS can let that carry on, with its progress in the Dynamic Island and on the Lock Screen. Notes and minutes are written with Clear Notes open, and carry on from where they stopped when you come back.") {
+                            toggle("Keep going when I leave the app", systemImage: "hourglass", isOn: $continueInBackground)
                         }
                     }
 

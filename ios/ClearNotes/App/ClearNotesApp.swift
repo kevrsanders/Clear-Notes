@@ -33,6 +33,7 @@ struct ContentView: View {
         .task {
             RecordingLiveActivity.endStale()
             MeetingSharing.clearSharedFiles()
+            MinutesJobs.shared.resumePaused(in: context)
             await MeetingProcessor.resumeUnfinished(in: context)
         }
         .onOpenURL { url in
@@ -55,8 +56,10 @@ struct ContentView: View {
             Task { await MeetingProcessor.resumeProcessing(in: context) }
         }
         .onChange(of: scenePhase) { _, phase in
-            // Notes paused in the background (Apple Intelligence limits background apps) carry on.
+            // Notes and minutes paused in the background (Apple Intelligence limits background
+            // apps) carry on from where they stopped.
             if phase == .active {
+                MinutesJobs.shared.resumePaused(in: context)
                 Task { await MeetingProcessor.resumeProcessing(in: context) }
             }
         }
