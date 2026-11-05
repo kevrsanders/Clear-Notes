@@ -234,6 +234,16 @@ struct MeetingDetailView: View {
                 if meeting.teamsJoinURL != nil {
                     Chip(text: "Teams meeting", systemImage: "video.fill")
                 }
+                let series = MeetingSeries.all(like: meeting, in: allMeetings)
+                if series.count > 1 {
+                    NavigationLink {
+                        SeriesListView(meeting: meeting)
+                    } label: {
+                        Chip(text: "\(series.count) in this series", systemImage: "repeat", tint: Theme.brand)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows every meeting in this series")
+                }
                 if meeting.importedAt != nil {
                     Chip(text: meeting.sharedBy.map { "Shared by \($0)" } ?? "Shared with you", systemImage: "tray.and.arrow.down.fill")
                 }
@@ -602,11 +612,18 @@ struct MeetingDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(Theme.success)
             }
-            NavigationLink(value: previous) {
-                Label("Open last meeting", systemImage: "arrow.right.circle")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.brand)
+            HStack(spacing: 16) {
+                NavigationLink(value: previous) {
+                    Label("Open last meeting", systemImage: "arrow.right.circle")
+                }
+                NavigationLink {
+                    SeriesListView(meeting: meeting)
+                } label: {
+                    Label("All in this series", systemImage: "repeat")
+                }
             }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Theme.brand)
             .buttonStyle(.plain)
         }
         .cardStyle(padding: 22)

@@ -12,6 +12,7 @@ struct MeetingsListView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var path: [Meeting] = []
+    @State private var showCalendar = false
     @State private var search = ""
     @State private var showConsent = false
     @State private var startAfterConsent = false
@@ -67,6 +68,7 @@ struct MeetingsListView: View {
             .background { GlowBackground() }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Meeting.self) { MeetingDetailView(meeting: $0) }
+            .navigationDestination(isPresented: $showCalendar) { MeetingsCalendarView() }
             // A meeting just imported from a shared file.
             .onReceive(NotificationCenter.default.publisher(for: .openMeeting)) { note in
                 guard let id = note.object as? PersistentIdentifier,
@@ -131,6 +133,9 @@ struct MeetingsListView: View {
                     .font(.system(size: 34, weight: .bold))
                     .tracking(-0.6)
                 Spacer()
+                GlassCircleButton(systemName: "calendar", accessibilityLabel: "Meetings by day") {
+                    showCalendar = true
+                }
                 if myName.isEmpty {
                     Image(systemName: "person.fill")
                         .font(.system(size: 17, weight: .semibold))
@@ -220,17 +225,27 @@ struct MeetingsListView: View {
         var id: String { title }
     }
 
+    /// Today, this week, then one section per month ("October 2026"), so older meetings aren't
+    /// one long list. The calendar button finds a particular day.
     private var sections: [MeetingSection] {
         let calendar = Calendar.current
         let weekStart = calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: .now)) ?? .now
         let today = meetings.filter { calendar.isDateInToday($0.createdAt) }
         let week = meetings.filter { !calendar.isDateInToday($0.createdAt) && $0.createdAt >= weekStart }
-        let earlier = meetings.filter { $0.createdAt < weekStart }
-        return [
+        var result = [
             MeetingSection(title: "Today", meetings: today),
             MeetingSection(title: "This week", meetings: week),
-            MeetingSection(title: "Earlier", meetings: earlier),
-        ].filter { !$0.meetings.isEmpty }
+        ]
+        // Meetings are newest first, so months come out newest first too.
+        for meeting in meetings where meeting.createdAt < weekStart {
+            let month = meeting.createdAt.formatted(.dateTime.month(.wide).year())
+            if result.last?.title == month {
+                result[result.count - 1].meetings.append(meeting)
+            } else {
+                result.append(MeetingSection(title: month, meetings: [meeting]))
+            }
+        }
+        return result.filter { !$0.meetings.isEmpty }
     }
 
     // MARK: - Calendar
