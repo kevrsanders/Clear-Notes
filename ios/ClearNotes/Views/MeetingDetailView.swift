@@ -32,6 +32,9 @@ struct MeetingDetailView: View {
     @State private var lastSelectedLine: UUID?
     /// Lines waiting for the user to choose who said them.
     @State private var reassigning: ReassignRequest?
+    /// The action being edited or assigned.
+    @State private var editingAction: ActionItem?
+    @AppStorage(SettingsKeys.myName) private var myName = ""
     @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
 
     /// The last meeting in this meeting's series, for the Last time card.
@@ -144,6 +147,10 @@ struct MeetingDetailView: View {
         }
         .sheet(isPresented: $sharingFile) {
             ShareMeetingSheet(meeting: meeting)
+        }
+        .sheet(item: $editingAction) { action in
+            ActionEditor(action: action, people: (action.meeting ?? meeting).assignablePeople(myName: myName))
+                .presentationDetents([.large])
         }
         // A dialog rather than a submenu: it stays put while the transcript redraws (e.g. during playback).
         .confirmationDialog(
@@ -588,7 +595,7 @@ struct MeetingDetailView: View {
                 Text(open.count == 1 ? "1 action still open from last time" : "\(open.count) actions still open from last time")
                     .font(.subheadline.weight(.semibold))
                 ForEach(open) { action in
-                    ActionCard(action: action)
+                    ActionCard(action: action, onEdit: { editingAction = action })
                 }
             } else if !previous.actions.isEmpty {
                 Label("Every action from last time is done.", systemImage: "checkmark.circle.fill")
@@ -687,7 +694,8 @@ struct MeetingDetailView: View {
                 ActionCard(
                     action: action,
                     onShowSource: sourceHandler(for: action),
-                    onMakeDecision: { meeting.makeDecision(from: action) }
+                    onMakeDecision: { meeting.makeDecision(from: action) },
+                    onEdit: { editingAction = action }
                 )
             }
         }
