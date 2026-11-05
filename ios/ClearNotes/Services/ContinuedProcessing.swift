@@ -31,7 +31,7 @@ final class ContinuedProcessing {
     private var fraction = 0.0
     private var subtitle = "Starting"
     enum Outcome {
-        case done, paused, failed
+        case done, paused, waitingForUnlock, failed
     }
 
     /// How the work ended, when it ended before the system started the task.
@@ -138,6 +138,8 @@ final class ContinuedProcessing {
             task.updateTitle(task.title, subtitle: "Notes ready")
         case .paused:
             task.updateTitle(task.title, subtitle: "Paused · open Clear Notes to continue")
+        case .waitingForUnlock:
+            task.updateTitle(task.title, subtitle: "Paused · unlock your iPhone to continue")
         case .failed:
             task.updateTitle(task.title, subtitle: "Couldn't finish · open Clear Notes")
         }

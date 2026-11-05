@@ -126,6 +126,11 @@ final class Meeting {
     /// Times the more accurate second pass has been started, so a pass that keeps failing or
     /// being interrupted isn't repeated on every restart.
     var accuratePassAttempts: Int = 0
+    /// The same for every copy of a shared meeting, so importing it again can update a copy.
+    var shareID: UUID?
+    /// Who shared this meeting, when it was imported from a Clear Notes file.
+    var sharedBy: String?
+    var importedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []

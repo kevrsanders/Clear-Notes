@@ -202,6 +202,7 @@ enum NotesText {
         source = source.replacingOccurrences(of: "(?i)<br\\s*/?>", with: "\n", options: .regularExpression)
         return plain(source)
             .split(whereSeparator: \.isNewline)
+            .flatMap { splitRunTogether(String($0)) }
             .map { line -> String in
                 var item = line.trimmingCharacters(in: .whitespaces)
                 while let first = item.first, "-•*–".contains(first) {
@@ -212,6 +213,15 @@ enum NotesText {
                 }
                 return item
             }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Points the model ran together on one line, e.g. "Budget agreed. - Rota ready." becomes two.
+    /// Only a dash or bullet straight after the end of a sentence counts, so "Wi-Fi" and "10 - 12" stay.
+    static func splitRunTogether(_ line: String) -> [String] {
+        line.replacingOccurrences(of: #"(?<=[.!?])\s+[-•–]\s+"#, with: "\n", options: .regularExpression)
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
     }
 

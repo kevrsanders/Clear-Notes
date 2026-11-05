@@ -11,7 +11,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.2.8"
+    MARKETING_VERSION: "0.2.9"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   ClearNotes:
@@ -45,6 +45,25 @@ targets:
         # iOS 26: lets meeting processing carry on in the background (ContinuedProcessing.swift).
         BGTaskSchedulerPermittedIdentifiers:
           - $(PRODUCT_BUNDLE_IDENTIFIER).notes.*
+        # Shared meetings (.clearnotes files) open in Clear Notes. Files are copied in, not edited in place.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.clearnotes.meeting
+            UTTypeDescription: Clear Notes meeting
+            UTTypeConformsTo:
+              - public.data
+              - public.content
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - clearnotes
+              public.mime-type:
+                - application/vnd.clearnotes.meeting
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Clear Notes meeting
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.clearnotes.meeting
+        LSSupportsOpeningDocumentsInPlace: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.clearnotes.app

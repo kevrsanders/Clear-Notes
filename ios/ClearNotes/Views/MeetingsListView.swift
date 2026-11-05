@@ -67,6 +67,13 @@ struct MeetingsListView: View {
             .background { GlowBackground() }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Meeting.self) { MeetingDetailView(meeting: $0) }
+            // A meeting just imported from a shared file.
+            .onReceive(NotificationCenter.default.publisher(for: .openMeeting)) { note in
+                guard let id = note.object as? PersistentIdentifier,
+                      let meeting = meetings.first(where: { $0.persistentModelID == id })
+                else { return }
+                path = [meeting]
+            }
             .sheet(item: $lastTimeMeeting, onDismiss: {
                 if let meeting = openAfterSheet {
                     openAfterSheet = nil

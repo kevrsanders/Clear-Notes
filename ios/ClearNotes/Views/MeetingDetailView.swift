@@ -25,6 +25,7 @@ struct MeetingDetailView: View {
     @State private var confirmImproveTranscript = false
     @State private var improveFailed = false
     @State private var editingSegment: TranscriptSegment?
+    @State private var sharingFile = false
     @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
 
     /// The last meeting in this meeting's series, for the Last time card.
@@ -130,6 +131,9 @@ struct MeetingDetailView: View {
         } message: {
             Text("The live transcript has been kept. Check the recording is still on this iPhone and try again later.")
         }
+        .sheet(isPresented: $sharingFile) {
+            ShareMeetingSheet(meeting: meeting)
+        }
         .sheet(item: $editingSegment) { segment in
             LineEditor(text: segment.text) { newText in
                 meeting.editSegmentText(segment.id, to: newText)
@@ -195,6 +199,9 @@ struct MeetingDetailView: View {
                 if meeting.teamsJoinURL != nil {
                     Chip(text: "Teams meeting", systemImage: "video.fill")
                 }
+                if meeting.importedAt != nil {
+                    Chip(text: meeting.sharedBy.map { "Shared by \($0)" } ?? "Shared with you", systemImage: "tray.and.arrow.down.fill")
+                }
                 Chip(text: "On-device", systemImage: "lock.fill", tint: Theme.brand)
             }
             if !meeting.attendees.isEmpty {
@@ -210,10 +217,19 @@ struct MeetingDetailView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            ShareLink(item: MarkdownExporter.markdown(for: meeting)) {
+            Menu {
+                Button {
+                    sharingFile = true
+                } label: {
+                    Label("Share meeting with a Clear Notes user", systemImage: "square.and.arrow.up.on.square")
+                }
+                ShareLink(item: MarkdownExporter.markdown(for: meeting)) {
+                    Label("Share as text", systemImage: "text.alignleft")
+                }
+            } label: {
                 Image(systemName: "square.and.arrow.up")
             }
-            .accessibilityLabel("Share notes")
+            .accessibilityLabel("Share")
             Menu {
                 Button {
                     UIPasteboard.general.string = MarkdownExporter.markdown(for: meeting)
@@ -862,10 +878,16 @@ struct MeetingDetailView: View {
 struct BulletList: View {
     var text: String
 
+    /// One bullet per point, including points written on one line ("- A. - B."), so notes
+    /// written before that was fixed show properly too.
     private var lines: [String] {
         text.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+            .flatMap { line -> [String] in
+                guard line.hasPrefix("- ") || line.hasPrefix("• ") else { return [line] }
+                return NotesText.splitRunTogether(String(line.dropFirst(2))).map { "- " + $0 }
+            }
     }
 
     var body: some View {

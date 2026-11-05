@@ -30,21 +30,35 @@ enum MeetingProcessor {
             meeting.processingStage = next
             continued.update(meeting)
         }
+        // The finished recording is protected while the iPhone is locked, so steps that read it
+        // wait for it to be unlocked rather than fail. Processing carries on from here then.
+        func waitForUnlock() {
+            try? meeting.modelContext?.save()
+            continued.finish(.waitingForUnlock)
+        }
 
         // A second, more accurate transcription of a new recording, before speakers are found. At
         // most twice, so one that keeps failing or being interrupted isn't redone on every restart.
         let isNew = meeting.pendingAudioFileName != nil || meeting.insightsSource == nil
         if isNew, !meeting.transcriptImproved, meeting.accuratePassAttempts < 2, AccurateTranscriber.isReady,
            let url = meeting.pendingAudioFileName.map({ RecordingStore.url(for: $0) }) ?? meeting.playableAudioURL {
+            guard AppActivity.isUnlocked else { return waitForUnlock() }
             stage(.transcript)
             meeting.accuratePassAttempts += 1
             try? meeting.modelContext?.save()
-            await applyAccurateTranscript(to: meeting, from: url)
+            if await applyAccurateTranscript(to: meeting, from: url) == .locked {
+                // Not a real attempt: the iPhone was locked part-way through.
+                meeting.accuratePassAttempts -= 1
+                return waitForUnlock()
+            }
         }
 
         if let fileName = meeting.pendingAudioFileName {
+            guard AppActivity.isUnlocked else { return waitForUnlock() }
             stage(.speakers)
-            await identifySpeakers(in: meeting, audioFileName: fileName, separator: separator)
+            guard await identifySpeakers(in: meeting, audioFileName: fileName, separator: separator) else {
+                return waitForUnlock()
+            }
         }
 
         // Names and terms from My words and the people in the meeting, now lines and speakers are settled.
@@ -159,13 +173,18 @@ enum MeetingProcessor {
         }
     }
 
-    private static func identifySpeakers(in meeting: Meeting, audioFileName: String, separator: SpeakerSeparating?) async {
+    /// Returns false when the recording couldn't be read because the iPhone was locked. The
+    /// recording is then left waiting, and speakers are identified once it's unlocked.
+    private static func identifySpeakers(in meeting: Meeting, audioFileName: String, separator: SpeakerSeparating?) async -> Bool {
         // Afterwards the audio is kept for playback or deleted, as the user chose.
-        defer {
+        func finish() {
             meeting.pendingAudioFileName = nil
             meeting.keepAudio(audioFileName)
         }
-        guard let separator else { return }
+        guard let separator else {
+            finish()
+            return true
+        }
         do {
             let turns = try await separator.separate(
                 audioAt: RecordingStore.url(for: audioFileName),
@@ -178,8 +197,13 @@ enum MeetingProcessor {
             VoiceLibrary.applyMatches(to: meeting)
             meeting.speakerNote = assigned.speakers.isEmpty ? "No separate voices were found." : nil
         } catch {
+            if AppActivity.isLockedFileError(error) || !AppActivity.isUnlocked {
+                return false
+            }
             meeting.speakerNote = "Speakers couldn't be identified. \(error.localizedDescription)"
         }
+        finish()
+        return true
     }
 
     /// Runs speaker separation again on the kept recording, for a known number of people.
@@ -241,7 +265,7 @@ enum MeetingProcessor {
         let oldSegments = meeting.segments
         meeting.processingState = .processing
         meeting.processingStage = .transcript
-        let improved = await applyAccurateTranscript(to: meeting, from: url)
+        let improved = await applyAccurateTranscript(to: meeting, from: url) == .improved
         if improved {
             applyVocabulary(to: meeting)
             for action in meeting.actions {
@@ -259,8 +283,16 @@ enum MeetingProcessor {
 
     /// Replaces the transcript with the accurate model's, keeping speakers where they're already
     /// known. Keeps the live transcript if the second pass fails or loses most of the words.
+    private enum AccuratePass {
+        case improved
+        /// The live transcript is kept: the pass failed or lost most of the words.
+        case kept
+        /// The recording couldn't be read because the iPhone was locked.
+        case locked
+    }
+
     @discardableResult
-    private static func applyAccurateTranscript(to meeting: Meeting, from url: URL) async -> Bool {
+    private static func applyAccurateTranscript(to meeting: Meeting, from url: URL) async -> AccuratePass {
         do {
             let words = try await AccurateTranscriber.shared.words(in: url)
             let original = meeting.segments
@@ -268,12 +300,12 @@ enum MeetingProcessor {
             let improved = TranscriptBuilder.segments(from: words) { time in
                 hasSpeakers ? TranscriptBuilder.speaker(at: time, in: original) : nil
             }
-            guard TranscriptBuilder.isUsable(improved, comparedWith: original) else { return false }
+            guard TranscriptBuilder.isUsable(improved, comparedWith: original) else { return .kept }
             meeting.segments = improved
             meeting.transcriptImproved = true
-            return true
+            return .improved
         } catch {
-            return false
+            return AppActivity.isLockedFileError(error) || !AppActivity.isUnlocked ? .locked : .kept
         }
     }
 
@@ -400,10 +432,29 @@ final class MeetingNotesProgress: NotesProgress {
     }
 }
 
-/// Whether Clear Notes is on screen. Apple Intelligence limits apps in the background.
+/// Whether Clear Notes is on screen (Apple Intelligence limits apps in the background), and
+/// whether the iPhone is unlocked.
 enum AppActivity {
     @MainActor static var isActive: Bool {
         UIApplication.shared.applicationState == .active
+    }
+
+    /// The finished recording uses iOS's strongest file protection, so it can only be opened while
+    /// the iPhone is unlocked.
+    @MainActor static var isUnlocked: Bool {
+        UIApplication.shared.isProtectedDataAvailable
+    }
+
+    /// A file read refused because the iPhone is locked, e.g. AVFoundation's error -54 ("permission").
+    static func isLockedFileError(_ error: Error) -> Bool {
+        var current: NSError? = error as NSError
+        while let error = current {
+            if error.code == -54 { return true }
+            if error.domain == NSCocoaErrorDomain, error.code == NSFileReadNoPermissionError { return true }
+            if error.domain == NSPOSIXErrorDomain, error.code == Int(EPERM) || error.code == Int(EACCES) { return true }
+            current = error.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return false
     }
 }
 
