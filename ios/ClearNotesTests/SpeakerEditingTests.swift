@@ -35,6 +35,18 @@ final class SpeakerEditingTests: XCTestCase {
         XCTAssertGreaterThan(meeting.revision, before)
     }
 
+    func testSeveralLinesMoveToOneSpeakerAtOnce() throws {
+        let meeting = try makeMeeting()
+        let before = meeting.revision
+
+        meeting.reassignSegments(Set(meeting.segments.map(\.id)), to: "S2")
+
+        XCTAssertEqual(meeting.segments.map(\.speakerID), ["S2", "S2"])
+        XCTAssertEqual(meeting.revision, before + 1, "One edit, so the notes are flagged for refresh once")
+        meeting.reassignSegments([], to: "S1")
+        XCTAssertEqual(meeting.segments.map(\.speakerID), ["S2", "S2"], "Nothing selected changes nothing")
+    }
+
     func testMergingMovesLinesAndRemovesTheSpeaker() throws {
         let meeting = try makeMeeting()
         meeting.reassignSegment(meeting.segments[1].id, to: "S2")

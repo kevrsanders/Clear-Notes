@@ -381,9 +381,15 @@ final class Meeting {
 
     /// Moves one line of the transcript to a different speaker.
     func reassignSegment(_ segmentID: UUID, to speakerID: String) {
+        reassignSegments([segmentID], to: speakerID)
+    }
+
+    /// Moves several lines to one speaker at once, e.g. a stretch where two voices were confused.
+    func reassignSegments(_ segmentIDs: Set<UUID>, to speakerID: String) {
+        guard !segmentIDs.isEmpty else { return }
         segments = segments.map { segment in
             var segment = segment
-            if segment.id == segmentID { segment.speakerID = speakerID }
+            if segmentIDs.contains(segment.id) { segment.speakerID = speakerID }
             return segment
         }
         didEditSpeakers()
