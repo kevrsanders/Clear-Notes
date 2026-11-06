@@ -473,7 +473,7 @@ struct RecordingView: View {
         .opacity(isRecording ? 1 : 0.5)
         .accessibilityLabel(title)
         .accessibilityValue(count > 0 ? "\(count) marked" : "")
-        .accessibilityHint(kind == .voiceNote ? "Tap just after saying something you need to do" : "Tap just after it's agreed")
+        .accessibilityHint(self.kind == .voiceNote ? "Tap just after saying something you need to do" : "Tap just after it's agreed")
     }
 
     private var controls: some View {
