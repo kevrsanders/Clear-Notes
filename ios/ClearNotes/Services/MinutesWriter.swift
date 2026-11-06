@@ -492,7 +492,7 @@ final class MinutesJobs {
     /// Carries on with minutes that paused while Clear Notes was in the background.
     func resumePaused(in context: ModelContext) {
         let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
-        for meeting in meetings where meeting.minutesInProgress {
+        for meeting in meetings where meeting.minutesInProgress && meeting.deletedAt == nil {
             write(meeting, fresh: false)
         }
     }

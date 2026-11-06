@@ -165,6 +165,9 @@ final class Meeting {
     /// The diary event this was recorded for (`CalendarMeeting.id`), so today's diary can show it
     /// as recorded.
     var calendarEventID: String?
+    /// When the user deleted it. It stays in Recently deleted for `RecentlyDeleted.keepFor`,
+    /// recording included, and is then deleted for good. Nil for meetings in use.
+    var deletedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []
@@ -267,6 +270,19 @@ final class Meeting {
                 action.status = .open
             }
         }
+        try? modelContext?.save()
+    }
+
+    // MARK: - Recently deleted
+
+    /// Moves the meeting to Recently deleted, where it can be restored for a week.
+    func moveToRecentlyDeleted(at date: Date = .now) {
+        deletedAt = date
+        try? modelContext?.save()
+    }
+
+    func restoreFromRecentlyDeleted() {
+        deletedAt = nil
         try? modelContext?.save()
     }
 

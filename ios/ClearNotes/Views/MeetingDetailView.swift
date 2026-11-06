@@ -49,7 +49,7 @@ struct MeetingDetailView: View {
     }
     @AppStorage(SettingsKeys.myName) private var myName = ""
     @AppStorage(SettingsKeys.useCalendar) private var useCalendar = false
-    @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
+    @Query(filter: #Predicate<Meeting> { $0.deletedAt == nil }, sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
     /// A catch-up's Minutes tab, shown when the user asks for formal minutes.
     @State private var showMinutes = false
     /// Diary events on the day it was recorded, offered by "Link to a diary meeting".
@@ -329,14 +329,13 @@ struct MeetingDetailView: View {
         .confirmationDialog("Delete this meeting?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete meeting", role: .destructive) {
                 playback.unload()
-                meeting.deleteAllAudio()
-                context.delete(meeting)
-                try? context.save()
+                meeting.moveToRecentlyDeleted()
+                DeletionUndo.shared.didDelete(meeting)
                 dismiss()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The recording, transcript, notes and actions will be deleted from this iPhone. This can't be undone.")
+            Text("It moves to Recently deleted, where you can restore it for 7 days. After that it's deleted for good, recording and all.")
         }
     }
 

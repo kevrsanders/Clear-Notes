@@ -33,7 +33,7 @@ struct RecordingView: View {
     @State private var addingPerson = false
     @State private var newPersonName = ""
     @AppStorage(SettingsKeys.myName) private var myName = ""
-    @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
+    @Query(filter: #Predicate<Meeting> { $0.deletedAt == nil }, sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
     @FocusState private var notesFocused: Bool
 
     private var isRecording: Bool { recorder.state == .recording }

@@ -156,7 +156,8 @@ enum MeetingSharing {
     @MainActor
     static func existingCopy(of shared: SharedMeeting, in context: ModelContext) -> Meeting? {
         let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
-        return meetings.first { $0.shareID == shared.meetingID }
+        // One in Recently deleted doesn't count: importing again adds it afresh.
+        return meetings.first { $0.shareID == shared.meetingID && $0.deletedAt == nil }
     }
 
     /// Adds the shared meeting to Clear Notes, or updates `existing` with it. The recipient's own

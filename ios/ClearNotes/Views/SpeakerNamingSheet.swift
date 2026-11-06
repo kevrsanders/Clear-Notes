@@ -14,7 +14,7 @@ struct SpeakerNamingSheet: View {
     @AppStorage(SettingsKeys.rememberVoices) private var rememberVoices = false
     @State private var rememberThisVoice = false
     @State private var suggestionRejected = false
-    @Query private var allMeetings: [Meeting]
+    @Query(filter: #Predicate<Meeting> { $0.deletedAt == nil }) private var allMeetings: [Meeting]
     @AppStorage(SettingsKeys.myName) private var myName = ""
     @State private var name = ""
     @FocusState private var nameFocused: Bool

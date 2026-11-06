@@ -176,7 +176,7 @@ enum MeetingProcessor {
     /// deletes nothing, so a recording in progress is never touched.
     static func resumeProcessing(in context: ModelContext) async {
         let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
-        for meeting in meetings where meeting.processingState == .processing {
+        for meeting in meetings where meeting.processingState == .processing && meeting.deletedAt == nil {
             await process(meeting)
         }
     }
