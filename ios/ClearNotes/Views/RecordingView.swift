@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 import UIKit
 
-/// Full-screen live capture, always dark: a level orb, timer, live transcript and the user's own notes.
+/// Full-screen live capture: a level orb, timer, live transcript and the user's own notes. Light or dark, like the rest of the app.
 struct RecordingView: View {
     enum Pane: Hashable {
         case transcript, notes
@@ -13,6 +13,7 @@ struct RecordingView: View {
     var onFinish: (RecordingResult, String, CalendarMeeting?) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(SettingsKeys.requireOnDevice) private var requireOnDevice = true
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
@@ -39,12 +40,13 @@ struct RecordingView: View {
 
     var body: some View {
         ZStack {
-            Color(hex: 0x07070B).ignoresSafeArea()
+            Color.dynamic(light: 0xF4F4F8, dark: 0x07070B).ignoresSafeArea()
             Circle()
                 .fill(Theme.recordGradient)
                 .frame(width: 420, height: 420)
                 .blur(radius: 120)
-                .opacity(isRecording ? 0.30 + Double(level) * 0.35 : 0.12)
+                // Softer on a light background, where the same glow looks heavy.
+                .opacity((isRecording ? 0.30 + Double(level) * 0.35 : 0.12) * (colorScheme == .dark ? 1 : 0.6))
                 .offset(y: -180)
                 .ignoresSafeArea()
                 .animation(.easeOut(duration: 0.3), value: level)
@@ -63,7 +65,7 @@ struct RecordingView: View {
                             .font(.system(size: 60, weight: .thin))
                             .monospacedDigit()
                             .contentTransition(.numericText())
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                     }
                     PillTabs<Pane>(
                         items: [.init(value: .transcript, title: "Transcript"), .init(value: .notes, title: "My notes")],
@@ -83,7 +85,6 @@ struct RecordingView: View {
             .padding(.horizontal, Theme.gutter)
             .padding(.bottom, 8)
         }
-        .preferredColorScheme(.dark)
         .task { await start() }
         .onAppear { ScreenAwake.hold() }
         .onDisappear { ScreenAwake.release() }
@@ -119,16 +120,16 @@ struct RecordingView: View {
             Spacer()
             HStack(spacing: 8) {
                 Circle()
-                    .fill(isRecording ? Theme.record : Color.white.opacity(0.4))
+                    .fill(isRecording ? Theme.record : Color.primary.opacity(0.4))
                     .frame(width: 8, height: 8)
                     .shadow(color: Theme.record.opacity(isRecording ? 0.9 : 0), radius: 4)
                 Text(statusText)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                 if recorder.isOnDevice {
                     Label("On-device", systemImage: "lock.fill")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(Color.primary.opacity(0.6))
                 }
             }
             .padding(.horizontal, 14)
@@ -198,17 +199,17 @@ struct RecordingView: View {
     private func linkedMeeting(_ meeting: CalendarMeeting) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "calendar")
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(Color.primary.opacity(0.6))
             VStack(alignment: .leading, spacing: 2) {
                 Text(meeting.title.isEmpty ? "Calendar event" : meeting.title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text([meeting.timeRange, meeting.attendees.isEmpty ? nil : "\(meeting.attendees.count) invited"]
                     .compactMap { $0 }
                     .joined(separator: " · "))
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(Color.primary.opacity(0.5))
             }
             Spacer(minLength: 0)
             if previousMeeting != nil {
@@ -217,10 +218,10 @@ struct RecordingView: View {
                 } label: {
                     Label("Last time", systemImage: "clock.arrow.circlepath")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, 10)
                         .frame(height: 30)
-                        .background(.white.opacity(0.12), in: Capsule())
+                        .background(Color.primary.opacity(0.12), in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Shows the summary and actions from the last meeting in this series")
@@ -230,9 +231,9 @@ struct RecordingView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(Color.primary.opacity(0.7))
                     .frame(width: 30, height: 30)
-                    .background(.white.opacity(0.1), in: Circle())
+                    .background(Color.primary.opacity(0.1), in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Not this meeting")
@@ -240,8 +241,8 @@ struct RecordingView: View {
         .padding(.leading, 14)
         .padding(.trailing, 8)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.06), in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.08)))
+        .background(Color.primary.opacity(0.06), in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
     }
 
     private var statusText: String {
@@ -260,13 +261,13 @@ struct RecordingView: View {
                     if identifySpeakers && SpeakerSeparators.isSupported {
                         Label("Speakers are identified when you finish", systemImage: "person.2.wave.2")
                             .font(.footnote)
-                            .foregroundStyle(.white.opacity(0.45))
+                            .foregroundStyle(Color.primary.opacity(0.45))
                             .padding(.top, 18)
                     }
                     if recorder.segments.isEmpty && recorder.liveText.isEmpty {
                         Text("Start talking. Your words will appear here.")
                             .font(.title3)
-                            .foregroundStyle(.white.opacity(0.4))
+                            .foregroundStyle(Color.primary.opacity(0.4))
                             .padding(.top, 8)
                     }
                     ForEach(recorder.segments) { segment in
@@ -300,14 +301,14 @@ struct RecordingView: View {
             ZStack(alignment: .topLeading) {
                 if notes.isEmpty {
                     Text("Jot down what matters. The AI uses your notes to decide what to focus on.")
-                        .foregroundStyle(.white.opacity(0.35))
+                        .foregroundStyle(Color.primary.opacity(0.35))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 8)
                 }
                 TextEditor(text: $notes)
                     .focused($notesFocused)
                     .scrollContentBackground(.hidden)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -322,8 +323,8 @@ struct RecordingView: View {
             }
         }
         .padding(14)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(.white.opacity(0.08)))
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
     }
 
     /// One tap, just after something is agreed, marks it. After the meeting the moments before
@@ -351,12 +352,12 @@ struct RecordingView: View {
                         .font(.caption.weight(.bold).monospacedDigit())
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(.white.opacity(0.2), in: Capsule())
+                        .background(Color.primary.opacity(0.2), in: Capsule())
                         .contentTransition(.numericText())
                 }
             }
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .frame(maxWidth: .infinity)
             .frame(height: 48)
             .glass(in: Capsule())
@@ -374,7 +375,7 @@ struct RecordingView: View {
             Button(action: togglePause) {
                 Image(systemName: recorder.state == .paused ? "play.fill" : "pause.fill")
                     .font(.title2)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .frame(width: 60, height: 60)
                     .glass(in: Circle())
             }
@@ -408,10 +409,10 @@ struct RecordingView: View {
             Spacer()
             Image(systemName: "mic.slash.fill")
                 .font(.system(size: 40))
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(Color.primary.opacity(0.5))
             Text(message)
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 Button("Open Settings") { UIApplication.shared.open(url) }
                     .buttonStyle(PrimaryButtonStyle())
@@ -513,10 +514,10 @@ private struct LiveLine: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(time?.clockString ?? "Now")
                 .font(.caption.weight(.semibold).monospacedDigit())
-                .foregroundStyle(isLive ? AnyShapeStyle(Theme.record) : AnyShapeStyle(Color.white.opacity(0.4)))
+                .foregroundStyle(isLive ? AnyShapeStyle(Theme.record) : AnyShapeStyle(Color.primary.opacity(0.4)))
             Text(text)
                 .font(.body)
-                .foregroundStyle(isLive ? Color.white.opacity(0.6) : Color.white.opacity(0.92))
+                .foregroundStyle(isLive ? Color.primary.opacity(0.6) : Color.primary.opacity(0.92))
         }
     }
 }

@@ -45,7 +45,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     }
 
     /// Applies to every window, sheets included. (SwiftUI's preferredColorScheme doesn't always
-    /// switch back to matching the iPhone until the app restarts.) The recording screen stays dark.
+    /// switch back to matching the iPhone until the app restarts.) Includes the recording screen.
     @MainActor
     static func apply(_ rawValue: String) {
         let style = (AppAppearance(rawValue: rawValue) ?? .system).interfaceStyle
@@ -106,7 +106,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    section("Appearance", footer: "Match iPhone follows Light or Dark in iPhone Settings → Display & Brightness. The recording screen is always dark.") {
+                    section("Appearance", footer: "Match iPhone follows Light or Dark in iPhone Settings → Display & Brightness. Applies everywhere in Clear Notes, including the recording screen.") {
                         Picker("Appearance", selection: $appearance) {
                             ForEach(AppAppearance.allCases) { option in
                                 Text(option.title).tag(option.rawValue)
