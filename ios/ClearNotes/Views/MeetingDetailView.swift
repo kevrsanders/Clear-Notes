@@ -25,6 +25,16 @@ struct MeetingDetailView: View {
     @State private var confirmImproveTranscript = false
     @State private var improveFailed = false
     @State private var editingSegment: TranscriptSegment?
+    @State private var sharingFile = false
+    /// Choosing transcript lines to move to another speaker together.
+    @State private var selectingLines = false
+    @State private var selectedLines: Set<UUID> = []
+    @State private var lastSelectedLine: UUID?
+    /// Lines waiting for the user to choose who said them.
+    @State private var reassigning: ReassignRequest?
+    /// The action being edited or assigned.
+    @State private var editingAction: ActionItem?
+    @AppStorage(SettingsKeys.myName) private var myName = ""
     @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
 
     /// The last meeting in this meeting's series, for the Last time card.
@@ -91,7 +101,12 @@ struct MeetingDetailView: View {
         }
         .background { GlowBackground() }
         .safeAreaInset(edge: .bottom) {
-            if playback.isLoaded {
+            if selectingLines {
+                selectionBar
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if playback.isLoaded {
                 PlayerBar(playback: playback, expiresAt: meeting.audioExpiresAt)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 6)
@@ -130,6 +145,30 @@ struct MeetingDetailView: View {
         } message: {
             Text("The live transcript has been kept. Check the recording is still on this iPhone and try again later.")
         }
+        .sheet(isPresented: $sharingFile) {
+            ShareMeetingSheet(meeting: meeting)
+        }
+        .sheet(item: $editingAction) { action in
+            ActionEditor(action: action, people: (action.meeting ?? meeting).assignablePeople(myName: myName))
+                .presentationDetents([.large])
+        }
+        // A dialog rather than a submenu: it stays put while the transcript redraws (e.g. during playback).
+        .confirmationDialog(
+            reassigning.map { $0.segmentIDs.count == 1 ? "Who said this line?" : "Who said these \($0.segmentIDs.count) lines?" } ?? "",
+            isPresented: Binding(get: { reassigning != nil }, set: { if !$0 { reassigning = nil } }),
+            titleVisibility: .visible,
+            presenting: reassigning
+        ) { request in
+            ForEach(speakerChoices(for: request)) { speaker in
+                Button(speaker.displayName) { reassign(request, to: speaker.id) }
+            }
+            Button("New speaker") {
+                let speaker = meeting.addSpeaker()
+                reassign(request, to: speaker.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .onChange(of: pane) { _, _ in endSelecting() }
         .sheet(item: $editingSegment) { segment in
             LineEditor(text: segment.text) { newText in
                 meeting.editSegmentText(segment.id, to: newText)
@@ -195,6 +234,19 @@ struct MeetingDetailView: View {
                 if meeting.teamsJoinURL != nil {
                     Chip(text: "Teams meeting", systemImage: "video.fill")
                 }
+                let series = MeetingSeries.all(like: meeting, in: allMeetings)
+                if series.count > 1 {
+                    NavigationLink {
+                        SeriesListView(meeting: meeting)
+                    } label: {
+                        Chip(text: "\(series.count) in this series", systemImage: "repeat", tint: Theme.brand)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows every meeting in this series")
+                }
+                if meeting.importedAt != nil {
+                    Chip(text: meeting.sharedBy.map { "Shared by \($0)" } ?? "Shared with you", systemImage: "tray.and.arrow.down.fill")
+                }
                 Chip(text: "On-device", systemImage: "lock.fill", tint: Theme.brand)
             }
             if !meeting.attendees.isEmpty {
@@ -210,10 +262,19 @@ struct MeetingDetailView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            ShareLink(item: MarkdownExporter.markdown(for: meeting)) {
+            Menu {
+                Button {
+                    sharingFile = true
+                } label: {
+                    Label("Share meeting with a Clear Notes user", systemImage: "square.and.arrow.up.on.square")
+                }
+                ShareLink(item: MarkdownExporter.markdown(for: meeting)) {
+                    Label("Share as text", systemImage: "text.alignleft")
+                }
+            } label: {
                 Image(systemName: "square.and.arrow.up")
             }
-            .accessibilityLabel("Share notes")
+            .accessibilityLabel("Share")
             Menu {
                 Button {
                     UIPasteboard.general.string = MarkdownExporter.markdown(for: meeting)
@@ -544,18 +605,25 @@ struct MeetingDetailView: View {
                 Text(open.count == 1 ? "1 action still open from last time" : "\(open.count) actions still open from last time")
                     .font(.subheadline.weight(.semibold))
                 ForEach(open) { action in
-                    ActionCard(action: action)
+                    ActionCard(action: action, onEdit: { editingAction = action })
                 }
             } else if !previous.actions.isEmpty {
                 Label("Every action from last time is done.", systemImage: "checkmark.circle.fill")
                     .font(.subheadline)
                     .foregroundStyle(Theme.success)
             }
-            NavigationLink(value: previous) {
-                Label("Open last meeting", systemImage: "arrow.right.circle")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.brand)
+            HStack(spacing: 16) {
+                NavigationLink(value: previous) {
+                    Label("Open last meeting", systemImage: "arrow.right.circle")
+                }
+                NavigationLink {
+                    SeriesListView(meeting: meeting)
+                } label: {
+                    Label("All in this series", systemImage: "repeat")
+                }
             }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Theme.brand)
             .buttonStyle(.plain)
         }
         .cardStyle(padding: 22)
@@ -643,7 +711,8 @@ struct MeetingDetailView: View {
                 ActionCard(
                     action: action,
                     onShowSource: sourceHandler(for: action),
-                    onMakeDecision: { meeting.makeDecision(from: action) }
+                    onMakeDecision: { meeting.makeDecision(from: action) },
+                    onEdit: { editingAction = action }
                 )
             }
         }
@@ -701,48 +770,175 @@ struct MeetingDetailView: View {
                 Text("Nothing was transcribed.")
                     .foregroundStyle(Theme.textSecondary)
                     .cardStyle()
+            } else if !meeting.speakers.isEmpty {
+                HStack {
+                    Text(selectingLines ? "Tap lines to select. Hold a line to select up to it." : "Hold a line to change its speaker.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
+                    Spacer(minLength: 8)
+                    Button(selectingLines ? "Done" : "Select lines") {
+                        if selectingLines { endSelecting() } else { startSelecting(nil) }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .tint(Theme.brand)
+                }
             }
             let counts = sourceCounts
             // Reading the revision makes speaker edits redraw the transcript straight away.
             let revision = meeting.revision
+            let playing = playingSegment
             ForEach(turns) { turn in
+                let ids = Set(turn.segments.map(\.id))
                 TurnView(
                     turn: turn,
                     speaker: meeting.speaker(withID: turn.speakerID),
                     showsAvatars: !meeting.speakers.isEmpty,
-                    allSpeakers: meeting.speakers,
-                    highlightedSegment: highlightedSegment,
-                    playingSegment: playingSegment,
-                    sourceCounts: counts,
+                    canChangeSpeaker: !meeting.speakers.isEmpty,
+                    // Only what concerns this turn, so the other turns don't redraw during playback.
+                    highlightedSegment: highlightedSegment.flatMap { ids.contains($0) ? $0 : nil },
+                    playingSegment: playing.flatMap { ids.contains($0) ? $0 : nil },
+                    sourceCounts: counts.filter { ids.contains($0.key) },
+                    isSelecting: selectingLines,
+                    selected: selectedLines.intersection(ids),
+                    canPlay: playHandler != nil,
                     onName: { namingSpeaker = $0 },
-                    onReassign: { segmentID, speakerID in meeting.reassignSegment(segmentID, to: speakerID) },
-                    onNewSpeaker: { segmentID in
-                        let speaker = meeting.addSpeaker()
-                        meeting.reassignSegment(segmentID, to: speaker.id)
+                    onChangeSpeaker: { segmentID in
+                        pausePlayback()
+                        reassigning = ReassignRequest(segmentIDs: [segmentID])
                     },
+                    onStartSelecting: { startSelecting($0) },
+                    onToggle: { toggleLine($0) },
+                    onSelectThrough: { selectThrough($0) },
                     onEdit: { editingSegment = $0 },
                     onPlay: playHandler
                 )
+                .equatable()
                 .id("\(turn.id)-\(revision)")
             }
         }
         .padding(.top, 4)
     }
 
-    private struct TurnView: View {
+    // MARK: - Choosing lines and who said them
+
+    private struct ReassignRequest: Identifiable {
+        let id = UUID()
+        let segmentIDs: Set<UUID>
+    }
+
+    /// Everyone for several lines; everyone except the current speaker for one line.
+    private func speakerChoices(for request: ReassignRequest) -> [Speaker] {
+        let sorted = meeting.speakers.sorted { $0.number < $1.number }
+        guard request.segmentIDs.count == 1, let id = request.segmentIDs.first,
+              let current = meeting.segments.first(where: { $0.id == id })?.speakerID
+        else { return sorted }
+        return sorted.filter { $0.id != current }
+    }
+
+    private func reassign(_ request: ReassignRequest, to speakerID: String) {
+        meeting.reassignSegments(request.segmentIDs, to: speakerID)
+        endSelecting()
+    }
+
+    private func pausePlayback() {
+        if playback.isPlaying { playback.pause() }
+    }
+
+    private func startSelecting(_ first: UUID?) {
+        pausePlayback()
+        withAnimation(.snappy) {
+            selectingLines = true
+            selectedLines = first.map { Set([$0]) } ?? []
+            lastSelectedLine = first
+        }
+    }
+
+    private func endSelecting() {
+        guard selectingLines || !selectedLines.isEmpty else { return }
+        withAnimation(.snappy) {
+            selectingLines = false
+            selectedLines = []
+            lastSelectedLine = nil
+        }
+    }
+
+    private func toggleLine(_ id: UUID) {
+        if selectedLines.contains(id) {
+            selectedLines.remove(id)
+        } else {
+            selectedLines.insert(id)
+            lastSelectedLine = id
+        }
+    }
+
+    /// Selects every line from the last one tapped to this one, for a stretch of lines.
+    private func selectThrough(_ id: UUID) {
+        let order = meeting.segments.map(\.id)
+        guard let anchor = lastSelectedLine, let from = order.firstIndex(of: anchor), let to = order.firstIndex(of: id) else {
+            toggleLine(id)
+            return
+        }
+        selectedLines.formUnion(order[min(from, to)...max(from, to)])
+        lastSelectedLine = id
+    }
+
+    private var selectionBar: some View {
+        HStack(spacing: 12) {
+            Button("Cancel") { endSelecting() }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
+            Spacer(minLength: 0)
+            Text("\(selectedLines.count) selected")
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+            Spacer(minLength: 0)
+            Button {
+                reassigning = ReassignRequest(segmentIDs: selectedLines)
+            } label: {
+                Label("Change speaker", systemImage: "person.crop.circle.badge.questionmark")
+            }
+            .buttonStyle(PrimaryButtonStyle(compact: true))
+            .disabled(selectedLines.isEmpty)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .glass(in: Capsule())
+    }
+
+    /// One speaker's consecutive lines. Equatable on its data, so a turn only redraws when
+    /// something in it changes, not on every playback tick elsewhere in the transcript.
+    private struct TurnView: View, Equatable {
         var turn: Turn
         var speaker: Speaker?
         var showsAvatars: Bool
-        var allSpeakers: [Speaker]
+        var canChangeSpeaker: Bool
         var highlightedSegment: UUID?
         var playingSegment: UUID?
         var sourceCounts: [UUID: Int]
+        var isSelecting: Bool
+        var selected: Set<UUID>
+        var canPlay: Bool
         var onName: (Speaker) -> Void
-        var onReassign: (UUID, String) -> Void
-        var onNewSpeaker: (UUID) -> Void
+        var onChangeSpeaker: (UUID) -> Void
+        var onStartSelecting: (UUID) -> Void
+        var onToggle: (UUID) -> Void
+        var onSelectThrough: (UUID) -> Void
         var onEdit: (TranscriptSegment) -> Void
         /// Plays the recording between two times, when the recording is kept.
         var onPlay: ((TimeInterval, TimeInterval?) -> Void)?
+
+        static func == (lhs: TurnView, rhs: TurnView) -> Bool {
+            lhs.turn.segments == rhs.turn.segments
+                && lhs.speaker == rhs.speaker
+                && lhs.showsAvatars == rhs.showsAvatars
+                && lhs.canChangeSpeaker == rhs.canChangeSpeaker
+                && lhs.highlightedSegment == rhs.highlightedSegment
+                && lhs.playingSegment == rhs.playingSegment
+                && lhs.sourceCounts == rhs.sourceCounts
+                && lhs.isSelecting == rhs.isSelecting
+                && lhs.selected == rhs.selected
+                && lhs.canPlay == rhs.canPlay
+        }
 
         var body: some View {
             HStack(alignment: .top, spacing: 12) {
@@ -762,6 +958,7 @@ struct MeetingDetailView: View {
                                     .foregroundStyle(Theme.speakerColor(number: speaker.number))
                             }
                             .buttonStyle(.plain)
+                            .disabled(isSelecting)
                             if speaker.name == nil {
                                 Text("Tap to name")
                                     .font(.caption2.weight(.semibold))
@@ -780,7 +977,52 @@ struct MeetingDetailView: View {
             }
         }
 
+        @ViewBuilder
         private func segmentView(_ segment: TranscriptSegment) -> some View {
+            if isSelecting {
+                selectableLine(segment)
+            } else {
+                line(segment)
+                    .contextMenu {
+                        if canPlay, let onPlay {
+                            Button {
+                                onPlay(segment.start, segment.end)
+                            } label: {
+                                Label("Play this line", systemImage: "play.fill")
+                            }
+                            Button {
+                                onPlay(segment.start, nil)
+                            } label: {
+                                Label("Play from here", systemImage: "forward.fill")
+                            }
+                        }
+                        if canChangeSpeaker {
+                            Button {
+                                onChangeSpeaker(segment.id)
+                            } label: {
+                                Label("Change speaker…", systemImage: "person.crop.circle.badge.questionmark")
+                            }
+                            Button {
+                                onStartSelecting(segment.id)
+                            } label: {
+                                Label("Select lines…", systemImage: "checkmark.circle")
+                            }
+                        }
+                        Button {
+                            UIPasteboard.general.string = segment.text
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                        Button {
+                            onEdit(segment)
+                        } label: {
+                            Label("Edit text", systemImage: "pencil")
+                        }
+                    }
+            }
+        }
+
+        private func line(_ segment: TranscriptSegment) -> some View {
             let isHighlighted = highlightedSegment == segment.id
             let isPlaying = playingSegment == segment.id
             let count = sourceCounts[segment.id] ?? 0
@@ -804,45 +1046,33 @@ struct MeetingDetailView: View {
             .padding(.horizontal, -8)
             .animation(.easeOut(duration: 0.2), value: isPlaying)
             .id(segment.id)
-            .contextMenu {
-                if let onPlay {
-                    Button {
-                        onPlay(segment.start, segment.end)
-                    } label: {
-                        Label("Play this line", systemImage: "play.fill")
-                    }
-                    Button {
-                        onPlay(segment.start, nil)
-                    } label: {
-                        Label("Play from here", systemImage: "forward.fill")
-                    }
-                }
-                Button {
-                    UIPasteboard.general.string = segment.text
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                Button {
-                    onEdit(segment)
-                } label: {
-                    Label("Edit text", systemImage: "pencil")
-                }
-                if !allSpeakers.isEmpty {
-                    Menu {
-                        ForEach(allSpeakers.filter { $0.id != segment.speakerID }) { option in
-                            Button(option.displayName) { onReassign(segment.id, option.id) }
-                        }
-                        Divider()
-                        Button {
-                            onNewSpeaker(segment.id)
-                        } label: {
-                            Label("New speaker", systemImage: "person.badge.plus")
-                        }
-                    } label: {
-                        Label("Change speaker", systemImage: "person.crop.circle.badge.questionmark")
-                    }
-                }
+        }
+
+        /// In selection mode: tap to select or deselect, hold to select every line up to this one.
+        private func selectableLine(_ segment: TranscriptSegment) -> some View {
+            let isSelected = selected.contains(segment.id)
+            return HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? Theme.brand : Theme.textTertiary)
+                    .font(.body)
+                Text(segment.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected ? Theme.brand.opacity(0.10) : .clear)
+            )
+            .padding(.horizontal, -8)
+            .contentShape(Rectangle())
+            .onTapGesture { onToggle(segment.id) }
+            .onLongPressGesture { onSelectThrough(segment.id) }
+            .sensoryFeedback(.selection, trigger: isSelected)
+            .id(segment.id)
+            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityHint("Double-tap to select. Hold to select every line up to this one.")
         }
     }
 
@@ -862,10 +1092,16 @@ struct MeetingDetailView: View {
 struct BulletList: View {
     var text: String
 
+    /// One bullet per point, including points written on one line ("- A. - B."), so notes
+    /// written before that was fixed show properly too.
     private var lines: [String] {
         text.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+            .flatMap { line -> [String] in
+                guard line.hasPrefix("- ") || line.hasPrefix("• ") else { return [line] }
+                return NotesText.splitRunTogether(String(line.dropFirst(2))).map { "- " + $0 }
+            }
     }
 
     var body: some View {
@@ -904,12 +1140,14 @@ private struct ProcessingCard: View {
         stage == .transcript || meeting.transcriptImproved
     }
     private var progress: Double {
-        switch stage {
-        case .transcript: 0.25
-        case .speakers: 0.45
-        case .notes: 0.75
-        case nil: 0.15
-        }
+        ProcessingProgress.fraction(stage: stage, partsDone: meeting.notesPartsDone, partsTotal: meeting.notesPartsTotal)
+    }
+    private var notesDetail: String {
+        let engine = NotesEnhancers.isAppleIntelligenceAvailable ? "Apple Intelligence, on this iPhone" : "On this iPhone"
+        guard stage == .notes,
+              let part = ProcessingProgress.notesDetail(partsDone: meeting.notesPartsDone, partsTotal: meeting.notesPartsTotal)
+        else { return engine }
+        return "\(part) · \(engine)"
     }
     private var wordCount: Int {
         meeting.segments.reduce(0) { $0 + $1.text.split(separator: " ").count }
@@ -935,7 +1173,7 @@ private struct ProcessingCard: View {
                 }
                 step(
                     "Writing summary and actions",
-                    detail: NotesEnhancers.isAppleIntelligenceAvailable ? "Apple Intelligence, on this iPhone" : "On this iPhone",
+                    detail: notesDetail,
                     state: stage == .notes ? .active : .pending
                 )
                 Label(AudioRetention.current.promise, systemImage: "lock.fill")
@@ -944,12 +1182,24 @@ private struct ProcessingCard: View {
             }
             .cardStyle()
 
-            Text("You can leave this screen. Notes keep processing in the background.")
+            Text(footnote)
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity)
                 .multilineTextAlignment(.center)
         }
+        // Auto-lock would put Clear Notes in the background, where iOS pauses it, so the screen
+        // stays on while this card is showing.
+        .onAppear { ScreenAwake.hold() }
+        .onDisappear { ScreenAwake.release() }
+    }
+
+    private var footnote: String {
+        var text = "Quickest with Clear Notes open: the screen stays on while this shows."
+        if #available(iOS 26.0, *) {
+            text += " If you leave, iOS may let it carry on for a while, with progress on your Lock Screen."
+        }
+        return text + " If iOS pauses it, it carries on from where it stopped when you come back."
     }
 
     private func step(_ title: String, detail: String, state: StepState) -> some View {

@@ -6,6 +6,8 @@ struct ActionCard: View {
     var onShowSource: (() -> Void)?
     /// When set, the action can be turned into a decision, for one that was really something agreed.
     var onMakeDecision: (() -> Void)?
+    /// When set, tapping the action (or Assign) opens it to change what, who and when.
+    var onEdit: (() -> Void)?
 
     /// The speaker whose name matches the owner, so the owner uses their colour.
     private var ownerSpeaker: Speaker? {
@@ -23,6 +25,10 @@ struct ActionCard: View {
                         .strikethrough(action.status == .done)
                         .foregroundStyle(action.status == .done ? Theme.textSecondary : Color.primary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onEdit?() }
+                        .accessibilityAddTraits(onEdit == nil ? [] : .isButton)
+                        .accessibilityHint(onEdit == nil ? "" : "Edit, assign or set a date")
                     details
                 }
                 Spacer(minLength: 0)
@@ -59,6 +65,11 @@ struct ActionCard: View {
         }
         .cardStyle(padding: 16)
         .contextMenu {
+            if let onEdit {
+                Button(action: onEdit) {
+                    Label("Edit or assign…", systemImage: "person.crop.circle.badge.plus")
+                }
+            }
             if let onMakeDecision {
                 Button {
                     withAnimation(.snappy) { onMakeDecision() }
@@ -100,14 +111,28 @@ struct ActionCard: View {
 
     @ViewBuilder
     private var details: some View {
-        if action.owner != nil || action.due != nil || onShowSource != nil || action.markID != nil {
+        if action.owner != nil || action.due != nil || onShowSource != nil || action.markID != nil || onEdit != nil {
             FlowLayout(spacing: 6) {
                 if action.markID != nil {
                     Chip(text: "Marked", systemImage: "hand.tap.fill", tint: Theme.success)
                         .accessibilityLabel("You marked this while recording")
                 }
                 if let owner = action.owner {
-                    ownerChip(owner)
+                    Button {
+                        onEdit?()
+                    } label: {
+                        ownerChip(owner)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(onEdit == nil)
+                    .accessibilityLabel("Owner: \(owner)")
+                    .accessibilityHint(onEdit == nil ? "" : "Change who's doing it")
+                } else if let onEdit {
+                    Button(action: onEdit) {
+                        Chip(text: "Assign", systemImage: "person.crop.circle.badge.plus", tint: Theme.brand)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Assign this action")
                 }
                 if let due = action.due {
                     Chip(text: due, systemImage: "calendar", tint: Theme.warning)

@@ -54,9 +54,11 @@ enum MinutesWriter {
     }
 
     /// A written item: its heading and what was discussed.
-    struct Item: Equatable, Sendable {
+    struct Item: Codable, Equatable, Sendable {
         var title: String
         var points: [String]
+        /// Written by Apple Intelligence, rather than from the topic's key points.
+        var byAI = true
     }
 
     struct Draft: Sendable {
@@ -64,22 +66,60 @@ enum MinutesWriter {
         var source: String
     }
 
+    enum Outcome: Sendable {
+        case written(Draft)
+        /// Apple Intelligence wouldn't write while Clear Notes was in the background. The items
+        /// written so far are saved, and the minutes carry on from the next one.
+        case paused
+    }
+
+    /// Identifies a part's text for saved items, so an item is reused only for exactly the same part.
+    static func key(for part: Part) -> String {
+        NotesPartKey.make(transcript: part.transcript, notes: "minutes\u{1F}" + (part.title ?? ""))
+    }
+
     // MARK: - Writing
 
-    static func write(_ input: Input, progress: @escaping @MainActor (Int, Int) -> Void = { _, _ in }) async -> Draft {
+    /// Writes the minutes item by item. Items in `saved` (by `key(for:)`) are reused, and each new
+    /// one is passed to `save` as soon as it's written.
+    static func write(
+        _ input: Input,
+        saved: [String: Item] = [:],
+        save: @escaping @MainActor (String, Item) -> Void = { _, _ in },
+        progress: @escaping @MainActor (Int, Int) -> Void = { _, _ in }
+    ) async -> Outcome {
         var items: [Item] = []
         var written = 0
         for (index, part) in input.parts.enumerated() {
             await progress(index + 1, input.parts.count)
-            #if canImport(FoundationModels)
-            if #available(iOS 26.0, *), AppleIntelligenceEnhancer.isAvailable,
-               let item = try? await AIMinutes.item(for: part) {
+            let partKey = Self.key(for: part)
+            if let item = saved[partKey] {
                 items.append(item)
-                written += 1
+                if item.byAI { written += 1 }
                 continue
             }
+            var aiItem: Item?
+            #if canImport(FoundationModels)
+            if #available(iOS 26.0, *), AppleIntelligenceEnhancer.isAvailable {
+                do {
+                    aiItem = try await AIMinutes.item(for: part)
+                } catch {
+                    // In the background this is iOS limiting Clear Notes, not a problem with the
+                    // part, so pause rather than settle for key points.
+                    if await !AppActivity.isActive { return .paused }
+                }
+            }
             #endif
-            items.append(await basicItem(for: part, isOnlyPart: input.parts.count == 1, speakers: input.speakers))
+            var item: Item
+            if let aiItem {
+                item = aiItem
+            } else {
+                item = await basicItem(for: part, isOnlyPart: input.parts.count == 1, speakers: input.speakers)
+                item.byAI = false
+            }
+            items.append(item)
+            if item.byAI { written += 1 }
+            await save(partKey, item)
         }
 
         let source: String
@@ -90,7 +130,7 @@ enum MinutesWriter {
         } else {
             source = "Written on this iPhone from the meeting's key points (Apple Intelligence wasn't available)"
         }
-        return Draft(text: document(input, items: items), source: source)
+        return .written(Draft(text: document(input, items: items), source: source))
     }
 
     /// For a part Apple Intelligence couldn't write: the topic's key points, or rule-based ones.
@@ -407,23 +447,66 @@ final class MinutesJobs {
         jobs[meeting.persistentModelID]
     }
 
-    func write(_ meeting: Meeting) {
+    /// Writes a meeting's minutes. `fresh` starts again (Write or Rewrite minutes); otherwise
+    /// minutes that were paused carry on from the next item.
+    func write(_ meeting: Meeting, fresh: Bool = true) {
         let id = meeting.persistentModelID
         guard jobs[id] == nil else { return }
+        if fresh {
+            meeting.minutesProgressData = nil
+        }
+        meeting.minutesInProgress = true
         let input = MinutesWriter.Input(meeting)
+        let saved = MinutesCheckpoint.decode(meeting.minutesProgressData)
         jobs[id] = Progress(part: 0, of: max(1, input.parts.count))
+        try? meeting.modelContext?.save()
         Task {
             let backgroundTime = BackgroundTime(name: "Write minutes")
             defer { backgroundTime.end() }
-            let draft = await MinutesWriter.write(input) { part, total in
-                self.jobs[id] = Progress(part: part, of: total)
+            let outcome = await MinutesWriter.write(
+                input,
+                saved: saved,
+                save: { key, item in
+                    var current = MinutesCheckpoint.decode(meeting.minutesProgressData)
+                    current[key] = item
+                    meeting.minutesProgressData = MinutesCheckpoint.encode(current)
+                    try? meeting.modelContext?.save()
+                },
+                progress: { part, total in
+                    self.jobs[id] = Progress(part: part, of: total)
+                }
+            )
+            if case .written(let draft) = outcome {
+                meeting.minutes = draft.text
+                meeting.minutesSource = draft.source
+                meeting.minutesWrittenAt = .now
+                meeting.minutesInProgress = false
+                meeting.minutesProgressData = nil
             }
-            meeting.minutes = draft.text
-            meeting.minutesSource = draft.source
-            meeting.minutesWrittenAt = .now
+            // When paused, the meeting stays marked in progress and carries on when the app is open.
             try? meeting.modelContext?.save()
             jobs[id] = nil
         }
+    }
+
+    /// Carries on with minutes that paused while Clear Notes was in the background.
+    func resumePaused(in context: ModelContext) {
+        let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
+        for meeting in meetings where meeting.minutesInProgress {
+            write(meeting, fresh: false)
+        }
+    }
+}
+
+/// Minutes items written so far, stored on the meeting as JSON until the minutes are finished.
+enum MinutesCheckpoint {
+    static func decode(_ data: Data?) -> [String: MinutesWriter.Item] {
+        guard let data, let items = try? JSONDecoder().decode([String: MinutesWriter.Item].self, from: data) else { return [:] }
+        return items
+    }
+
+    static func encode(_ items: [String: MinutesWriter.Item]) -> Data? {
+        items.isEmpty ? nil : try? JSONEncoder().encode(items)
     }
 }
 

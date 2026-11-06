@@ -1,6 +1,7 @@
+import CryptoKit
 import Foundation
 
-struct ExtractedAction: Equatable, Sendable {
+struct ExtractedAction: Codable, Equatable, Sendable {
     var task: String
     var owner: String?
     var due: String?
@@ -34,6 +35,131 @@ enum NotesEnhancerError: Error, Equatable, LocalizedError {
 protocol NotesEnhancer: Sendable {
     var sourceName: String { get }
     func enhance(segments: [TranscriptSegment], speakers: [Speaker], userNotes: String) async throws -> MeetingInsights
+    /// The same, saving each finished part of a long meeting to `progress` so the notes carry on
+    /// where they stopped if iOS pauses Clear Notes, and reporting how far they've got.
+    func enhance(
+        segments: [TranscriptSegment],
+        speakers: [Speaker],
+        userNotes: String,
+        progress: NotesProgress?
+    ) async throws -> MeetingInsights
+}
+
+extension NotesEnhancer {
+    /// Engines that finish quickly (rule-based extraction) don't need to save their progress.
+    func enhance(
+        segments: [TranscriptSegment],
+        speakers: [Speaker],
+        userNotes: String,
+        progress: NotesProgress?
+    ) async throws -> MeetingInsights {
+        try await enhance(segments: segments, speakers: speakers, userNotes: userNotes)
+    }
+}
+
+/// One finished part of a long meeting's notes: its topic, key points, decisions and actions.
+struct NotesPart: Codable, Equatable, Sendable {
+    var topic: String
+    var keyPoints: [String]
+    var decisions: [String]
+    var actions: [ExtractedAction]
+    var start: TimeInterval
+    var end: TimeInterval
+    /// Set when this part used basic extraction, saying why.
+    var basicReason: String?
+}
+
+/// Where a notes engine saves finished parts and reports how far it has got.
+protocol NotesProgress: Sendable {
+    /// Parts already written for a piece of the transcript (see `NotesPartKey`), if any.
+    func savedParts(for key: String) async -> [NotesPart]?
+    func save(_ parts: [NotesPart], for key: String) async
+    /// `done` of `total` parts are written. Called before the first part and after each one.
+    func update(done: Int, of total: Int) async
+}
+
+/// Identifies a piece of the transcript, so a saved part is reused only for exactly the same text
+/// (and the same notes from the user). Stable across launches, unlike `hashValue`.
+enum NotesPartKey {
+    static func make(transcript: String, notes: String) -> String {
+        let digest = SHA256.hash(data: Data((notes + "\u{1F}" + transcript).utf8))
+        return digest.prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// Writes a long meeting's notes one piece of transcript at a time. A piece already written (saved
+/// under its key) is reused, and each new one is saved as soon as it's written, so the notes carry
+/// on where they stopped after a pause.
+enum PartByPart {
+    static func run(
+        _ pieces: [String],
+        notes: String,
+        progress: NotesProgress?,
+        write: (Int) async throws -> [NotesPart]
+    ) async throws -> [NotesPart] {
+        var parts: [NotesPart] = []
+        await progress?.update(done: 0, of: pieces.count)
+        for (index, piece) in pieces.enumerated() {
+            let key = NotesPartKey.make(transcript: piece, notes: notes)
+            if let saved = await progress?.savedParts(for: key) {
+                parts += saved
+            } else {
+                let written = try await write(index)
+                await progress?.save(written, for: key)
+                parts += written
+            }
+            await progress?.update(done: index + 1, of: pieces.count)
+        }
+        return parts
+    }
+}
+
+/// Saved parts, stored on the meeting as JSON until its notes are finished.
+enum NotesCheckpoint {
+    static func decode(_ data: Data?) -> [String: [NotesPart]] {
+        guard let data, let parts = try? JSONDecoder().decode([String: [NotesPart]].self, from: data) else { return [:] }
+        return parts
+    }
+
+    static func encode(_ parts: [String: [NotesPart]]) -> Data? {
+        parts.isEmpty ? nil : try? JSONEncoder().encode(parts)
+    }
+}
+
+/// How far a meeting's processing has got, for the processing card and the system's progress view.
+enum ProcessingProgress {
+    /// Improving the transcript and identifying speakers take roughly the first half; writing the
+    /// notes, part by part, the second.
+    static func fraction(stage: ProcessingStage?, partsDone: Int, partsTotal: Int) -> Double {
+        switch stage {
+        case nil: 0.1
+        case .transcript: 0.2
+        case .speakers: 0.4
+        case .notes:
+            partsTotal > 0 ? 0.55 + 0.4 * Double(min(partsDone, partsTotal)) / Double(partsTotal) : 0.55
+        }
+    }
+
+    /// "Part 12 of 38" while a long meeting's notes are written, then "Writing the summary".
+    static func notesDetail(partsDone: Int, partsTotal: Int) -> String? {
+        guard partsTotal > 1 else { return nil }
+        return partsDone >= partsTotal ? "Writing the summary" : "Part \(partsDone + 1) of \(partsTotal)"
+    }
+
+    /// One line for the system's progress view, e.g. "Writing notes · part 12 of 38".
+    static func subtitle(stage: ProcessingStage?, partsDone: Int, partsTotal: Int) -> String {
+        switch stage {
+        case .transcript:
+            return "Improving the transcript"
+        case .speakers:
+            return "Identifying speakers"
+        case .notes:
+            guard partsTotal > 1 else { return "Writing notes" }
+            return partsDone >= partsTotal ? "Writing the summary" : "Writing notes · part \(partsDone + 1) of \(partsTotal)"
+        case nil:
+            return "Starting"
+        }
+    }
 }
 
 enum NotesEnhancers {
@@ -76,6 +202,7 @@ enum NotesText {
         source = source.replacingOccurrences(of: "(?i)<br\\s*/?>", with: "\n", options: .regularExpression)
         return plain(source)
             .split(whereSeparator: \.isNewline)
+            .flatMap { splitRunTogether(String($0)) }
             .map { line -> String in
                 var item = line.trimmingCharacters(in: .whitespaces)
                 while let first = item.first, "-•*–".contains(first) {
@@ -86,6 +213,15 @@ enum NotesText {
                 }
                 return item
             }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Points the model ran together on one line, e.g. "Budget agreed. - Rota ready." becomes two.
+    /// Only a dash or bullet straight after the end of a sentence counts, so "Wi-Fi" and "10 - 12" stay.
+    static func splitRunTogether(_ line: String) -> [String] {
+        line.replacingOccurrences(of: #"(?<=[.!?])\s+[-•–]\s+"#, with: "\n", options: .regularExpression)
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
     }
 

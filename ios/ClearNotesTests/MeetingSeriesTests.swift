@@ -48,6 +48,19 @@ final class MeetingSeriesTests: XCTestCase {
         XCTAssertNil(MeetingSeries.previous(seriesID: nil, title: "Something new", before: now, in: all))
     }
 
+    func testAllMeetingsInASeriesNewestFirst() throws {
+        let container = try makeContainer()
+        let first = meeting("Weekly check-in", daysAgo: 14, seriesID: "A", in: container)
+        let second = meeting("Weekly check-in", daysAgo: 7, seriesID: "A", in: container)
+        let today = meeting("Weekly check-in", daysAgo: 0, seriesID: "A", in: container)
+        let other = meeting("Board meeting", daysAgo: 3, in: container)
+
+        let series = MeetingSeries.all(like: second, in: [first, other, today, second])
+
+        XCTAssertEqual(series.map(\.createdAt), [today, second, first].map(\.createdAt))
+        XCTAssertEqual(MeetingSeries.all(like: other, in: [first, other, today]).count, 1, "A one-off is a series of one")
+    }
+
     func testLinkingToARepeatingEventKeepsItsSeries() throws {
         let container = try makeContainer()
         let recorded = meeting(Meeting.defaultTitle(for: now), daysAgo: 0, in: container)

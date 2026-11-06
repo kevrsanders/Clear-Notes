@@ -117,6 +117,24 @@ final class Meeting {
     /// How the minutes were written, e.g. by Apple Intelligence on this iPhone.
     var minutesSource: String?
     var minutesWrittenAt: Date?
+    /// Minutes are being written, or paused part-way while Clear Notes was in the background.
+    var minutesInProgress: Bool = false
+    /// Minutes items written so far (see `MinutesCheckpoint`), until the minutes are finished.
+    var minutesProgressData: Data?
+    /// Parts of the notes already written (see `NotesCheckpoint`), so a long meeting's notes carry
+    /// on where they stopped if iOS pauses Clear Notes. Cleared when the notes are finished.
+    var notesProgressData: Data?
+    /// How many parts of the notes are written, for "Part 12 of 38".
+    var notesPartsDone: Int = 0
+    var notesPartsTotal: Int = 0
+    /// Times the more accurate second pass has been started, so a pass that keeps failing or
+    /// being interrupted isn't repeated on every restart.
+    var accuratePassAttempts: Int = 0
+    /// The same for every copy of a shared meeting, so importing it again can update a copy.
+    var shareID: UUID?
+    /// Who shared this meeting, when it was imported from a Clear Notes file.
+    var sharedBy: String?
+    var importedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []
@@ -167,9 +185,20 @@ final class Meeting {
     /// Takes the title, invited people and Teams link from the calendar event this recording was made in.
     func link(to event: CalendarMeeting) {
         if !event.title.isEmpty { title = event.title }
-        attendees = event.attendees
+        // The person recording was at the meeting, as organiser or attendee, so they're listed
+        // first: by the calendar's name for them, or else their name from Settings.
+        let settingsName = UserDefaults.standard.string(forKey: SettingsKeys.myName)
+        attendees = Self.people(event.attendees, me: event.myName ?? settingsName)
         teamsJoinURL = event.teamsJoinURL?.absoluteString
         seriesID = event.seriesID
+    }
+
+    /// The user first (when their name is known and not already listed), then everyone else.
+    static func people(_ others: [String], me: String?) -> [String] {
+        guard let me = me?.trimmingCharacters(in: .whitespaces), !me.isEmpty,
+              !others.contains(where: { $0.caseInsensitiveCompare(me) == .orderedSame })
+        else { return others }
+        return [me] + others
     }
 
     // MARK: - Recording
@@ -352,9 +381,15 @@ final class Meeting {
 
     /// Moves one line of the transcript to a different speaker.
     func reassignSegment(_ segmentID: UUID, to speakerID: String) {
+        reassignSegments([segmentID], to: speakerID)
+    }
+
+    /// Moves several lines to one speaker at once, e.g. a stretch where two voices were confused.
+    func reassignSegments(_ segmentIDs: Set<UUID>, to speakerID: String) {
+        guard !segmentIDs.isEmpty else { return }
         segments = segments.map { segment in
             var segment = segment
-            if segment.id == segmentID { segment.speakerID = speakerID }
+            if segmentIDs.contains(segment.id) { segment.speakerID = speakerID }
             return segment
         }
         didEditSpeakers()

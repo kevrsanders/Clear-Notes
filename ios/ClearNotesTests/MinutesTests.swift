@@ -162,3 +162,40 @@ final class MinutesInputTests: XCTestCase {
         XCTAssertEqual(input.actions.first?.time, 400)
     }
 }
+
+@MainActor
+final class MinutesResumeTests: XCTestCase {
+    private final class SavedKeys {
+        var keys: [String] = []
+    }
+
+    func testSavedItemsAreReusedAndNewOnesAreSaved() async {
+        let first = MinutesWriter.Part(title: "Rota changes", start: 0, end: 300, transcript: "[0:05] Priya: The rota is ready.", segments: [], keyPoints: ["The rota is ready"])
+        let second = MinutesWriter.Part(title: "Budget", start: 300, end: 600, transcript: "[5:05] Tom: Spending is on track.", segments: [], keyPoints: ["Spending is on track"])
+        let input = MinutesWriter.Input(
+            title: "Weekly check-in", start: Date(timeIntervalSince1970: 1_793_000_000), duration: 600,
+            present: [], unnamedSpeakers: 0, parts: [first, second], decisions: [], actions: [], speakers: []
+        )
+        let saved = MinutesWriter.Item(title: "Rota changes", points: ["Priya reported that the rota was ready"])
+        let savedKeys = SavedKeys()
+
+        // As after a pause: the first item was written before it.
+        let outcome = await MinutesWriter.write(
+            input,
+            saved: [MinutesWriter.key(for: first): saved],
+            save: { key, _ in savedKeys.keys.append(key) }
+        )
+
+        guard case .written(let draft) = outcome else { return XCTFail("Expected finished minutes") }
+        XCTAssertTrue(draft.text.contains("1.1 Priya reported that the rota was ready."), "The saved item is reused, not rewritten")
+        XCTAssertTrue(draft.text.contains("2. Budget"))
+        XCTAssertEqual(savedKeys.keys, [MinutesWriter.key(for: second)], "Only the new item is saved")
+        XCTAssertNotEqual(MinutesWriter.key(for: first), MinutesWriter.key(for: second))
+    }
+
+    func testSavedItemsSurviveEncoding() {
+        let items = ["abc": MinutesWriter.Item(title: "Budget", points: ["Spending was on track"], byAI: false)]
+        XCTAssertEqual(MinutesCheckpoint.decode(MinutesCheckpoint.encode(items)), items)
+        XCTAssertNil(MinutesCheckpoint.encode([:]))
+    }
+}

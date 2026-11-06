@@ -209,3 +209,49 @@ final class MeetingCalendarLinkTests: XCTestCase {
         XCTAssertEqual(meeting.title, title)
     }
 }
+
+@MainActor
+final class MeetingPeopleTests: XCTestCase {
+    /// Held for the whole test. SwiftData models stop saving changes once their container is released.
+    private var container: ModelContainer?
+
+    func testTheUserIsListedFirstOnce() {
+        XCTAssertEqual(Meeting.people(["Tom Ellis"], me: "Priya Sharma"), ["Priya Sharma", "Tom Ellis"])
+        XCTAssertEqual(Meeting.people(["Priya Sharma", "Tom Ellis"], me: "priya sharma"), ["Priya Sharma", "Tom Ellis"])
+        XCTAssertEqual(Meeting.people(["Tom Ellis"], me: "  "), ["Tom Ellis"])
+        XCTAssertEqual(Meeting.people(["Tom Ellis"], me: nil), ["Tom Ellis"])
+    }
+
+    func testTheOrganiserIsKeptWhenRecordingIsLinkedToTheEvent() throws {
+        let container = try ModelContainer(
+            for: Meeting.self, ActionItem.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        self.container = container
+        let meeting = Meeting(title: "Test")
+        container.mainContext.insert(meeting)
+        meeting.link(to: CalendarMeeting(
+            id: "1", title: "Weekly check-in", start: .now, end: .now.addingTimeInterval(1_800),
+            attendees: ["Tom Ellis"], myName: "Priya Sharma"
+        ))
+        XCTAssertEqual(meeting.attendees, ["Priya Sharma", "Tom Ellis"])
+    }
+
+    func testPeopleAnActionCanBeAssignedTo() throws {
+        let container = try ModelContainer(
+            for: Meeting.self, ActionItem.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        self.container = container
+        let meeting = Meeting(title: "Test")
+        container.mainContext.insert(meeting)
+        meeting.speakers = [Speaker(id: "S1", number: 1, name: "Tom Ellis"), Speaker(id: "S2", number: 2)]
+        meeting.attendees = ["Priya Sharma", "tom ellis"]
+        let action = ActionItem(text: "Send the rota", owner: "Sam Lee", status: .open)
+        container.mainContext.insert(action)
+        meeting.actions.append(action)
+
+        // The user first, then named speakers, invited people and existing owners, each once.
+        XCTAssertEqual(meeting.assignablePeople(myName: " Priya Sharma "), ["Priya Sharma", "Tom Ellis", "Sam Lee"])
+    }
+}

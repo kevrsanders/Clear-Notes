@@ -15,61 +15,84 @@ enum MeetingProcessor {
         guard inFlight.insert(meeting.persistentModelID).inserted else { return }
         defer { inFlight.remove(meeting.persistentModelID) }
 
-        // Ask iOS for time to finish if the user leaves the app straight after recording.
+        // Ask iOS for time to finish if the user leaves the app straight after recording. On
+        // iOS 26 it can carry on for longer, with its progress shown by the system.
         let backgroundTime = BackgroundTime(name: "Process meeting")
         defer { backgroundTime.end() }
+        let continued = ContinuedProcessing.shared
 
         meeting.processingState = .processing
         meeting.processingError = nil
+        func stage(_ next: ProcessingStage) {
+            meeting.processingStage = next
+            continued.update(meeting)
+        }
+        // The finished recording is protected while the iPhone is locked, so steps that read it
+        // wait for it to be unlocked rather than fail. Processing carries on from here then.
+        func waitForUnlock() {
+            try? meeting.modelContext?.save()
+            continued.finish(.waitingForUnlock)
+        }
 
-        // A second, more accurate transcription of a new recording, once, before speakers are found.
+        // A second, more accurate transcription of a new recording, before speakers are found. At
+        // most twice, so one that keeps failing or being interrupted isn't redone on every restart.
         let isNew = meeting.pendingAudioFileName != nil || meeting.insightsSource == nil
-        if isNew, !meeting.transcriptImproved, AccurateTranscriber.isReady,
-           let url = meeting.pendingAudioFileName.map({ RecordingStore.url(for: $0) }) ?? meeting.playableAudioURL {
-            meeting.processingStage = .transcript
-            await applyAccurateTranscript(to: meeting, from: url)
+        let accurateURL: URL? = isNew && !meeting.transcriptImproved && meeting.accuratePassAttempts < 2 && AccurateTranscriber.isReady
+            ? meeting.pendingAudioFileName.map({ RecordingStore.url(for: $0) }) ?? meeting.playableAudioURL
+            : nil
+        // The system's background progress is only for the steps that read the recording: notes
+        // need Clear Notes open, so it would only end with an error there.
+        if accurateURL != nil || meeting.pendingAudioFileName != nil, AppActivity.isActive {
+            continued.begin()
+        }
+
+        if let url = accurateURL {
+            guard AppActivity.isUnlocked else { return waitForUnlock() }
+            stage(.transcript)
+            meeting.accuratePassAttempts += 1
+            try? meeting.modelContext?.save()
+            if await applyAccurateTranscript(to: meeting, from: url) == .locked {
+                // Not a real attempt: the iPhone was locked part-way through.
+                meeting.accuratePassAttempts -= 1
+                return waitForUnlock()
+            }
         }
 
         if let fileName = meeting.pendingAudioFileName {
-            meeting.processingStage = .speakers
-            await identifySpeakers(in: meeting, audioFileName: fileName, separator: separator)
+            guard AppActivity.isUnlocked else { return waitForUnlock() }
+            stage(.speakers)
+            guard await identifySpeakers(in: meeting, audioFileName: fileName, separator: separator) else {
+                return waitForUnlock()
+            }
         }
+
+        // The recording steps are done; the notes are written with Clear Notes open.
+        continued.finish(.readyForNotes)
 
         // Names and terms from My words and the people in the meeting, now lines and speakers are settled.
         applyVocabulary(to: meeting)
 
-        meeting.processingStage = .notes
-        var insights: MeetingInsights
-        var source = enhancer.sourceName
-        do {
-            insights = try await enhancer.enhance(
-                segments: meeting.segments,
-                speakers: meeting.speakers,
-                userNotes: meeting.userNotes
-            )
-        } catch {
-            if (error as? NotesEnhancerError) == .busy, UIApplication.shared.applicationState != .active {
-                // Apple Intelligence limits apps in the background. The meeting stays in progress
-                // and finishes when Clear Notes is next opened.
-                return
-            }
-            // Basic notes are better than none, so fall back when Apple Intelligence can't finish.
-            let basic = HeuristicEnhancer()
-            guard !(enhancer is HeuristicEnhancer),
-                  let fallback = try? await basic.enhance(
-                      segments: meeting.segments,
-                      speakers: meeting.speakers,
-                      userNotes: meeting.userNotes
-                  )
-            else {
-                meeting.processingError = error.localizedDescription
-                meeting.processingState = .failed
-                meeting.processingStage = nil
-                return
-            }
-            insights = fallback
-            insights.note = "Apple Intelligence couldn't write these notes because \(NotesEnhancers.reason(for: error)), so basic extraction was used. Try again for fuller notes."
-            source = basic.sourceName
+        meeting.notesPartsDone = 0
+        meeting.notesPartsTotal = 0
+        stage(.notes)
+        let insights: MeetingInsights
+        let source: String
+        switch await writeNotes(for: meeting, with: enhancer) {
+        case .written(let written, let writtenBy):
+            insights = written
+            source = writtenBy
+        case .paused:
+            // Apple Intelligence limits apps in the background. The meeting stays in progress, its
+            // finished parts are saved, and it carries on when Clear Notes is next opened.
+            try? meeting.modelContext?.save()
+            continued.finish(.paused)
+            return
+        case .failed(let message):
+            meeting.processingError = message
+            meeting.processingState = .failed
+            meeting.processingStage = nil
+            continued.finish(.failed)
+            return
         }
         // Moments marked while recording (taps and spoken phrases) become actions and decisions.
         let marks = meeting.marks + SpokenMarks.find(in: meeting.segments, besides: meeting.marks)
@@ -80,6 +103,59 @@ enum MeetingProcessor {
         meeting.processingState = .ready
         meeting.notesNeedRefresh = false
         meeting.processingStage = nil
+        meeting.notesProgressData = nil
+        meeting.notesPartsDone = 0
+        meeting.notesPartsTotal = 0
+        try? meeting.modelContext?.save()
+        continued.finish(.done)
+    }
+
+    private enum NotesOutcome {
+        case written(MeetingInsights, source: String)
+        case paused
+        case failed(String)
+    }
+
+    /// Writes the notes, saving each part as it's finished. When Apple Intelligence is busy with the
+    /// app open, it waits and tries again (finished parts aren't redone) before settling for basic
+    /// notes; in the background it pauses instead.
+    private static func writeNotes(for meeting: Meeting, with enhancer: NotesEnhancer) async -> NotesOutcome {
+        let progress = MeetingNotesProgress(meeting: meeting)
+        var busyRetries = 0
+        while true {
+            do {
+                let insights = try await enhancer.enhance(
+                    segments: meeting.segments,
+                    speakers: meeting.speakers,
+                    userNotes: meeting.userNotes,
+                    progress: progress
+                )
+                return .written(insights, source: enhancer.sourceName)
+            } catch {
+                let busy = (error as? NotesEnhancerError) == .busy
+                if busy, !AppActivity.isActive {
+                    return .paused
+                }
+                if busy, progress.hasSavedParts, busyRetries < 2 {
+                    busyRetries += 1
+                    try? await Task.sleep(for: .seconds(30))
+                    continue
+                }
+                // Basic notes are better than none, so fall back when Apple Intelligence can't finish.
+                let basic = HeuristicEnhancer()
+                guard !(enhancer is HeuristicEnhancer),
+                      var fallback = try? await basic.enhance(
+                          segments: meeting.segments,
+                          speakers: meeting.speakers,
+                          userNotes: meeting.userNotes
+                      )
+                else {
+                    return .failed(error.localizedDescription)
+                }
+                fallback.note = "Apple Intelligence couldn't write these notes because \(NotesEnhancers.reason(for: error)), so basic extraction was used. Try again for fuller notes."
+                return .written(fallback, source: basic.sourceName)
+            }
+        }
     }
 
     /// Finishes meetings that were still processing when the app was closed, deletes recordings
@@ -105,13 +181,18 @@ enum MeetingProcessor {
         }
     }
 
-    private static func identifySpeakers(in meeting: Meeting, audioFileName: String, separator: SpeakerSeparating?) async {
+    /// Returns false when the recording couldn't be read because the iPhone was locked. The
+    /// recording is then left waiting, and speakers are identified once it's unlocked.
+    private static func identifySpeakers(in meeting: Meeting, audioFileName: String, separator: SpeakerSeparating?) async -> Bool {
         // Afterwards the audio is kept for playback or deleted, as the user chose.
-        defer {
+        func finish() {
             meeting.pendingAudioFileName = nil
             meeting.keepAudio(audioFileName)
         }
-        guard let separator else { return }
+        guard let separator else {
+            finish()
+            return true
+        }
         do {
             let turns = try await separator.separate(
                 audioAt: RecordingStore.url(for: audioFileName),
@@ -124,8 +205,13 @@ enum MeetingProcessor {
             VoiceLibrary.applyMatches(to: meeting)
             meeting.speakerNote = assigned.speakers.isEmpty ? "No separate voices were found." : nil
         } catch {
+            if AppActivity.isLockedFileError(error) || !AppActivity.isUnlocked {
+                return false
+            }
             meeting.speakerNote = "Speakers couldn't be identified. \(error.localizedDescription)"
         }
+        finish()
+        return true
     }
 
     /// Runs speaker separation again on the kept recording, for a known number of people.
@@ -187,7 +273,7 @@ enum MeetingProcessor {
         let oldSegments = meeting.segments
         meeting.processingState = .processing
         meeting.processingStage = .transcript
-        let improved = await applyAccurateTranscript(to: meeting, from: url)
+        let improved = await applyAccurateTranscript(to: meeting, from: url) == .improved
         if improved {
             applyVocabulary(to: meeting)
             for action in meeting.actions {
@@ -205,8 +291,16 @@ enum MeetingProcessor {
 
     /// Replaces the transcript with the accurate model's, keeping speakers where they're already
     /// known. Keeps the live transcript if the second pass fails or loses most of the words.
+    private enum AccuratePass {
+        case improved
+        /// The live transcript is kept: the pass failed or lost most of the words.
+        case kept
+        /// The recording couldn't be read because the iPhone was locked.
+        case locked
+    }
+
     @discardableResult
-    private static func applyAccurateTranscript(to meeting: Meeting, from url: URL) async -> Bool {
+    private static func applyAccurateTranscript(to meeting: Meeting, from url: URL) async -> AccuratePass {
         do {
             let words = try await AccurateTranscriber.shared.words(in: url)
             let original = meeting.segments
@@ -214,12 +308,12 @@ enum MeetingProcessor {
             let improved = TranscriptBuilder.segments(from: words) { time in
                 hasSpeakers ? TranscriptBuilder.speaker(at: time, in: original) : nil
             }
-            guard TranscriptBuilder.isUsable(improved, comparedWith: original) else { return false }
+            guard TranscriptBuilder.isUsable(improved, comparedWith: original) else { return .kept }
             meeting.segments = improved
             meeting.transcriptImproved = true
-            return true
+            return .improved
         } catch {
-            return false
+            return AppActivity.isLockedFileError(error) || !AppActivity.isUnlocked ? .locked : .kept
         }
     }
 
@@ -313,6 +407,62 @@ enum MeetingProcessor {
         if meeting.segments.contains(where: { $0.id == id }) { return id }
         guard let mark = meeting.marks.first(where: { $0.id == id }) else { return nil }
         return meeting.segment(at: mark.time)?.id
+    }
+}
+
+/// Saves each finished part of a meeting's notes on the meeting, and keeps its progress up to date.
+@MainActor
+final class MeetingNotesProgress: NotesProgress {
+    private let meeting: Meeting
+    private var saved: [String: [NotesPart]]
+
+    init(meeting: Meeting) {
+        self.meeting = meeting
+        saved = NotesCheckpoint.decode(meeting.notesProgressData)
+    }
+
+    var hasSavedParts: Bool { !saved.isEmpty }
+
+    func savedParts(for key: String) async -> [NotesPart]? {
+        saved[key]
+    }
+
+    func save(_ parts: [NotesPart], for key: String) async {
+        saved[key] = parts
+        meeting.notesProgressData = NotesCheckpoint.encode(saved)
+        try? meeting.modelContext?.save()
+    }
+
+    func update(done: Int, of total: Int) async {
+        meeting.notesPartsDone = done
+        meeting.notesPartsTotal = total
+        ContinuedProcessing.shared.update(meeting)
+    }
+}
+
+/// Whether Clear Notes is on screen (Apple Intelligence limits apps in the background), and
+/// whether the iPhone is unlocked.
+enum AppActivity {
+    @MainActor static var isActive: Bool {
+        UIApplication.shared.applicationState == .active
+    }
+
+    /// The finished recording uses iOS's strongest file protection, so it can only be opened while
+    /// the iPhone is unlocked.
+    @MainActor static var isUnlocked: Bool {
+        UIApplication.shared.isProtectedDataAvailable
+    }
+
+    /// A file read refused because the iPhone is locked, e.g. AVFoundation's error -54 ("permission").
+    static func isLockedFileError(_ error: Error) -> Bool {
+        var current: NSError? = error as NSError
+        while let error = current {
+            if error.code == -54 { return true }
+            if error.domain == NSCocoaErrorDomain, error.code == NSFileReadNoPermissionError { return true }
+            if error.domain == NSPOSIXErrorDomain, error.code == Int(EPERM) || error.code == Int(EACCES) { return true }
+            current = error.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return false
     }
 }
 

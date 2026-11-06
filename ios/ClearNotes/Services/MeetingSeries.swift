@@ -14,15 +14,25 @@ enum MeetingSeries {
         calendar: Calendar = .current
     ) -> Meeting? {
         let dayStart = calendar.startOfDay(for: date)
-        let key = normalizedTitle(title)
         return meetings
-            .filter { $0.createdAt < dayStart }
-            .filter { meeting in
-                // Calendar IDs are trusted when both meetings have one; otherwise the title decides.
-                if let seriesID, let other = meeting.seriesID { return seriesID == other }
-                return !key.isEmpty && normalizedTitle(meeting.title) == key
-            }
+            .filter { $0.createdAt < dayStart && isInSeries($0, seriesID: seriesID, title: title) }
             .max { $0.createdAt < $1.createdAt }
+    }
+
+    /// Every meeting in the series, newest first, including `meeting` itself.
+    @MainActor
+    static func all(like meeting: Meeting, in meetings: [Meeting]) -> [Meeting] {
+        meetings
+            .filter { $0 === meeting || isInSeries($0, seriesID: meeting.seriesID, title: meeting.title) }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// Calendar IDs are trusted when both meetings have one; otherwise the title decides.
+    @MainActor
+    private static func isInSeries(_ meeting: Meeting, seriesID: String?, title: String) -> Bool {
+        if let seriesID, let other = meeting.seriesID { return seriesID == other }
+        let key = normalizedTitle(title)
+        return !key.isEmpty && normalizedTitle(meeting.title) == key
     }
 
     /// "Weekly Infra & Cyber catch-up" → "weekly infra cyber catch up"

@@ -85,8 +85,8 @@ struct RecordingView: View {
         }
         .preferredColorScheme(.dark)
         .task { await start() }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .onAppear { ScreenAwake.hold() }
+        .onDisappear { ScreenAwake.release() }
         .sheet(isPresented: $showLastTime) {
             if let previousMeeting {
                 LastTimeView(meeting: previousMeeting)
