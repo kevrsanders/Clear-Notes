@@ -384,6 +384,14 @@ final class Meeting {
         reassignSegments([segmentID], to: speakerID)
     }
 
+    /// Accepts (as open actions) or dismisses every suggested action at once.
+    func reviewAllSuggestions(accept: Bool) {
+        for action in actions where action.status == .suggested {
+            action.status = accept ? .open : .dismissed
+        }
+        try? modelContext?.save()
+    }
+
     /// Moves several lines to one speaker at once, e.g. a stretch where two voices were confused.
     func reassignSegments(_ segmentIDs: Set<UUID>, to speakerID: String) {
         guard !segmentIDs.isEmpty else { return }

@@ -16,6 +16,30 @@ struct Eyebrow: View {
     }
 }
 
+/// A tappable chip on an action card (Assign, Source): a little larger than `Chip`, with an
+/// outline, so it reads as something to tap.
+struct ActionChip: View {
+    var text: String
+    var systemImage: String
+    var tint: Color = Theme.brand
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .bold))
+            Text(text)
+                .lineLimit(1)
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(tint)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        .background(tint.opacity(0.14), in: Capsule())
+        .overlay(Capsule().strokeBorder(tint.opacity(0.35), lineWidth: 1))
+        .contentShape(Capsule())
+    }
+}
+
 /// Small rounded label used for owners, due dates and status.
 struct Chip: View {
     var text: String
@@ -153,19 +177,25 @@ struct PillTabs<Value: Hashable>: View {
                 Button {
                     withAnimation(.snappy(duration: 0.3)) { selection = item.value }
                 } label: {
-                    HStack(spacing: 5) {
-                        Text(item.title)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        if item.badge > 0 {
-                            Text("\(item.badge)")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Theme.brand, in: Capsule())
+                    // The count sits on the corner like an app badge, so it doesn't take width from
+                    // the title: every tab is the same width and the highlight fits it evenly.
+                    Text(item.title)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .overlay(alignment: .topTrailing) {
+                            if item.badge > 0 {
+                                Text("\(item.badge)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .frame(minWidth: 16, minHeight: 16)
+                                    .background(Theme.brand, in: Capsule())
+                                    .fixedSize()
+                                    .offset(x: 12, y: -10)
+                                    .accessibilityHidden(true)
+                            }
                         }
-                    }
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(isSelected ? Color.primary : Theme.textSecondary)
                     .frame(maxWidth: .infinity)
@@ -182,6 +212,7 @@ struct PillTabs<Value: Hashable>: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityValue(item.badge > 0 ? "\(item.badge) to review" : "")
             }
         }
         .padding(4)

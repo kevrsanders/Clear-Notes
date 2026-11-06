@@ -34,6 +34,13 @@ struct MeetingDetailView: View {
     @State private var reassigning: ReassignRequest?
     /// The action being edited or assigned.
     @State private var editingAction: ActionItem?
+    /// Accepting or dismissing every suggestion, waiting for the user to confirm.
+    @State private var bulkReview: BulkReview?
+
+    private enum BulkReview: Identifiable {
+        case acceptAll, dismissAll
+        var id: Self { self }
+    }
     @AppStorage(SettingsKeys.myName) private var myName = ""
     @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
 
@@ -147,6 +154,23 @@ struct MeetingDetailView: View {
         }
         .sheet(isPresented: $sharingFile) {
             ShareMeetingSheet(meeting: meeting)
+        }
+        .confirmationDialog(
+            bulkReview == .dismissAll ? "Dismiss all \(toReview.count) suggestions?" : "Accept all \(toReview.count) suggestions?",
+            isPresented: Binding(get: { bulkReview != nil }, set: { if !$0 { bulkReview = nil } }),
+            titleVisibility: .visible,
+            presenting: bulkReview
+        ) { review in
+            switch review {
+            case .acceptAll:
+                Button("Accept all") { withAnimation(.snappy) { meeting.reviewAllSuggestions(accept: true) } }
+            case .dismissAll:
+                Button("Dismiss all", role: .destructive) { withAnimation(.snappy) { meeting.reviewAllSuggestions(accept: false) } }
+            }
+        } message: { review in
+            Text(review == .acceptAll
+                 ? "They become open actions. You can still edit, reassign or tick them off one by one."
+                 : "They're removed from the list. Actions you've accepted or marked aren't affected.")
         }
         .sheet(item: $editingAction) { action in
             ActionEditor(action: action, people: (action.meeting ?? meeting).assignablePeople(myName: myName))
@@ -705,8 +729,20 @@ struct MeetingDetailView: View {
     @ViewBuilder
     private func actionGroup(_ title: String, _ items: [ActionItem]) -> some View {
         if !items.isEmpty {
-            Eyebrow(title)
-                .padding(.top, 6)
+            HStack(alignment: .firstTextBaseline) {
+                Eyebrow(title)
+                Spacer(minLength: 8)
+                // Suggestions can be many in a long meeting, so they can be cleared together.
+                if items.count > 1, items.allSatisfy({ $0.status == .suggested }) {
+                    Button("Accept all") { bulkReview = .acceptAll }
+                    Text("·")
+                        .foregroundStyle(Theme.textTertiary)
+                    Button("Dismiss all") { bulkReview = .dismissAll }
+                }
+            }
+            .font(.footnote.weight(.semibold))
+            .tint(Theme.brand)
+            .padding(.top, 6)
             ForEach(items) { action in
                 ActionCard(
                     action: action,

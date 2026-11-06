@@ -47,6 +47,28 @@ final class SpeakerEditingTests: XCTestCase {
         XCTAssertEqual(meeting.segments.map(\.speakerID), ["S2", "S2"], "Nothing selected changes nothing")
     }
 
+    func testAllSuggestionsCanBeAcceptedOrDismissedTogether() throws {
+        let meeting = try makeMeeting()
+        let context = try XCTUnwrap(container?.mainContext)
+        let suggested = [ActionItem(text: "Book a room"), ActionItem(text: "Send the rota")]
+        let open = ActionItem(text: "Order supplies", status: .open)
+        for action in suggested + [open] {
+            context.insert(action)
+            meeting.actions.append(action)
+        }
+
+        meeting.reviewAllSuggestions(accept: false)
+        XCTAssertEqual(suggested.map(\.status), [.dismissed, .dismissed])
+        XCTAssertEqual(open.status, .open, "Actions already accepted aren't touched")
+
+        let another = ActionItem(text: "Call the supplier")
+        context.insert(another)
+        meeting.actions.append(another)
+        meeting.reviewAllSuggestions(accept: true)
+        XCTAssertEqual(another.status, .open)
+        XCTAssertEqual(suggested.map(\.status), [.dismissed, .dismissed])
+    }
+
     func testMergingMovesLinesAndRemovesTheSpeaker() throws {
         let meeting = try makeMeeting()
         meeting.reassignSegment(meeting.segments[1].id, to: "S2")

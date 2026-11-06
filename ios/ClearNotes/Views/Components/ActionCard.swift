@@ -35,11 +35,13 @@ struct ActionCard: View {
             }
 
             if action.status == .suggested {
-                FlowLayout(spacing: 8) {
+                // One tidy row across the card: Accept, Dismiss, and ⋯ for the rest.
+                HStack(spacing: 8) {
                     Button {
                         withAnimation(.snappy) { action.status = .open }
                     } label: {
                         Label("Accept", systemImage: "checkmark")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryButtonStyle(compact: true))
 
@@ -47,24 +49,33 @@ struct ActionCard: View {
                         withAnimation(.snappy) { action.status = .dismissed }
                     } label: {
                         Label("Dismiss", systemImage: "xmark")
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
 
-                    if let onMakeDecision {
-                        Button {
-                            withAnimation(.snappy) { onMakeDecision() }
+                    if onMakeDecision != nil || onEdit != nil || onShowSource != nil {
+                        Menu {
+                            moreActions
                         } label: {
-                            Label("Decision", systemImage: "signpost.right")
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(Color.primary)
+                                .frame(width: 38, height: 38)
+                                .background(Color.primary.opacity(0.08), in: Circle())
+                                .contentShape(Circle())
                         }
-                        .buttonStyle(SecondaryButtonStyle(compact: true))
-                        .accessibilityLabel("It's a decision, not an action")
+                        .accessibilityLabel("More")
                     }
                 }
-                .padding(.leading, 44)
             }
         }
         .cardStyle(padding: 16)
         .contextMenu {
+            if let onShowSource {
+                Button(action: onShowSource) {
+                    Label("Show source", systemImage: "quote.opening")
+                }
+            }
             if let onEdit {
                 Button(action: onEdit) {
                     Label("Edit or assign…", systemImage: "person.crop.circle.badge.plus")
@@ -76,6 +87,28 @@ struct ActionCard: View {
                 } label: {
                     Label("Make it a decision", systemImage: "signpost.right")
                 }
+            }
+        }
+    }
+
+    /// "It's a decision", "Edit or assign" and "Show source", for the ⋯ button.
+    @ViewBuilder
+    private var moreActions: some View {
+        if let onMakeDecision {
+            Button {
+                withAnimation(.snappy) { onMakeDecision() }
+            } label: {
+                Label("It's a decision", systemImage: "signpost.right")
+            }
+        }
+        if let onEdit {
+            Button(action: onEdit) {
+                Label("Edit or assign", systemImage: "person.crop.circle.badge.plus")
+            }
+        }
+        if let onShowSource {
+            Button(action: onShowSource) {
+                Label("Show source", systemImage: "quote.opening")
             }
         }
     }
@@ -129,7 +162,7 @@ struct ActionCard: View {
                     .accessibilityHint(onEdit == nil ? "" : "Change who's doing it")
                 } else if let onEdit {
                     Button(action: onEdit) {
-                        Chip(text: "Assign", systemImage: "person.crop.circle.badge.plus", tint: Theme.brand)
+                        ActionChip(text: "Assign", systemImage: "person.crop.circle.badge.plus")
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Assign this action")
@@ -139,7 +172,7 @@ struct ActionCard: View {
                 }
                 if let onShowSource {
                     Button(action: onShowSource) {
-                        Chip(text: "Source", systemImage: "quote.opening", tint: Theme.brand)
+                        ActionChip(text: "Source", systemImage: "quote.opening")
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Shows where this was said in the transcript")
@@ -151,16 +184,18 @@ struct ActionCard: View {
     /// Owner as a capsule: a small avatar in the speaker's colour plus the name.
     private func ownerChip(_ owner: String) -> some View {
         let color = ownerSpeaker.map { Theme.speakerColor(number: $0.number) } ?? Color(hex: 0x8E8E9A)
-        return HStack(spacing: 5) {
-            Avatar(name: owner, color: color, size: 18)
+        // The same size and outline as the Assign and Source chips beside it.
+        return HStack(spacing: 6) {
+            Avatar(name: owner, color: color, size: 22)
             Text(owner)
-                .font(.caption.weight(.semibold))
+                .font(.footnote.weight(.semibold))
                 .lineLimit(1)
         }
         .foregroundStyle(color)
         .padding(.leading, 3)
-        .padding(.trailing, 9)
+        .padding(.trailing, 11)
         .padding(.vertical, 3)
-        .background(color.opacity(0.12), in: Capsule())
+        .background(color.opacity(0.14), in: Capsule())
+        .overlay(Capsule().strokeBorder(color.opacity(0.35), lineWidth: 1))
     }
 }
