@@ -80,17 +80,18 @@ struct MeetingsListView: View {
             .scrollDismissesKeyboard(.immediately)
             .background { GlowBackground() }
             .toolbar(.hidden, for: .navigationBar)
-            // The card's Delete always asks first. The meeting goes to Recently deleted for a week.
+            // The card's Delete always asks first: Recently deleted for a week, or gone for good now.
             .confirmationDialog(
                 meetingToDelete.map { "Delete \"\($0.title)\"?" } ?? "Delete this meeting?",
                 isPresented: Binding(get: { meetingToDelete != nil }, set: { if !$0 { meetingToDelete = nil } }),
                 titleVisibility: .visible,
                 presenting: meetingToDelete
             ) { meeting in
-                Button("Delete meeting", role: .destructive) { delete(meeting) }
+                Button("Move to Recently deleted") { delete(meeting) }
+                Button("Delete permanently", role: .destructive) { deleteForGood(meeting) }
                 Button("Cancel", role: .cancel) {}
             } message: { _ in
-                Text("It moves to Recently deleted, where you can restore it for 7 days. After that it's deleted for good, recording and all.")
+                Text(RecentlyDeleted.choiceMessage)
             }
             .safeAreaInset(edge: .bottom) {
                 if undo.meeting != nil {
@@ -308,6 +309,13 @@ struct MeetingsListView: View {
         withAnimation(.snappy) {
             meeting.moveToRecentlyDeleted()
             undo.didDelete(meeting)
+        }
+    }
+
+    private func deleteForGood(_ meeting: Meeting) {
+        meetingToDelete = nil
+        withAnimation(.snappy) {
+            RecentlyDeleted.deleteForGood(meeting, in: context)
         }
     }
 
