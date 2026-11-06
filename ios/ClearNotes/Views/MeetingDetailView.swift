@@ -34,6 +34,12 @@ struct MeetingDetailView: View {
     @State private var reassigning: ReassignRequest?
     /// The action being edited or assigned.
     @State private var editingAction: ActionItem?
+    /// The player appears only when it's needed: full while playing, a small pill once paused.
+    @State private var playerMode: PlayerMode = .hidden
+
+    private enum PlayerMode {
+        case hidden, full, mini
+    }
     /// Accepting or dismissing every suggestion, waiting for the user to confirm.
     @State private var bulkReview: BulkReview?
 
@@ -113,12 +119,32 @@ struct MeetingDetailView: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 6)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if playback.isLoaded {
-                PlayerBar(playback: playback, expiresAt: meeting.audioExpiresAt)
-                    .padding(.horizontal, 12)
+            } else if playback.isLoaded, playerMode == .full {
+                PlayerBar(playback: playback, expiresAt: meeting.audioExpiresAt) {
+                    playback.pause()
+                    withAnimation(.snappy) { playerMode = .hidden }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if playback.isLoaded, playerMode == .mini {
+                miniPlayer
+                    .padding(.horizontal, 16)
                     .padding(.bottom, 6)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(.scale(scale: 0.8, anchor: .bottomTrailing).combined(with: .opacity))
             }
+        }
+        // Playing brings up the full player. A few seconds after pausing (or after the last
+        // scrub while paused) it tucks itself away into the small pill.
+        .task(id: "\(playback.isPlaying)-\(Int(playback.currentTime))") {
+            if playback.isPlaying {
+                if playerMode != .full { withAnimation(.snappy) { playerMode = .full } }
+                return
+            }
+            guard playerMode == .full else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled, !playback.isPlaying, playerMode == .full else { return }
+            withAnimation(.snappy) { playerMode = .mini }
         }
         .task(id: meeting.audioFileName) {
             if let url = meeting.playableAudioURL {
@@ -257,6 +283,22 @@ struct MeetingDetailView: View {
                 }
                 if meeting.teamsJoinURL != nil {
                     Chip(text: "Teams meeting", systemImage: "video.fill")
+                }
+                if playback.isLoaded {
+                    Button {
+                        if playback.isPlaying {
+                            playback.pause()
+                        } else {
+                            playback.play()
+                        }
+                    } label: {
+                        ActionChip(
+                            text: playback.isPlaying ? "Playing" : "Play recording",
+                            systemImage: playback.isPlaying ? "pause.fill" : "play.fill"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(playback.isPlaying ? "Pause recording" : "Play recording")
                 }
                 let series = MeetingSeries.all(like: meeting, in: allMeetings)
                 if series.count > 1 {
@@ -855,6 +897,34 @@ struct MeetingDetailView: View {
         .padding(.top, 4)
     }
 
+    /// The paused player, out of the way in the corner. Tap it to open the full player.
+    private var miniPlayer: some View {
+        HStack {
+            Spacer(minLength: 0)
+            HStack(spacing: 8) {
+                Button(action: playback.togglePlayback) {
+                    Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .background(Theme.brandGradient, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(playback.isPlaying ? "Pause recording" : "Play recording")
+                Text("\(playback.currentTime.clockString) / \(playback.duration.clockString)")
+                    .font(.footnote.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.primary)
+            }
+            .padding(.leading, 6)
+            .padding(.trailing, 14)
+            .padding(.vertical, 6)
+            .glass(in: Capsule())
+            .contentShape(Capsule())
+            .onTapGesture { withAnimation(.snappy) { playerMode = .full } }
+            .accessibilityAction(named: "Show player") { playerMode = .full }
+        }
+    }
+
     // MARK: - Choosing lines and who said them
 
     private struct ReassignRequest: Identifiable {
@@ -1311,6 +1381,8 @@ private struct TopicRow: View {
 private struct PlayerBar: View {
     let playback: AudioPlayback
     let expiresAt: Date?
+    /// Stops playback and hides the player.
+    var onClose: () -> Void
 
     private var keptUntil: String {
         guard let expiresAt else { return "Kept until you delete it" }
@@ -1356,6 +1428,16 @@ private struct PlayerBar: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Playback speed")
+
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.primary.opacity(0.08), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close player")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
