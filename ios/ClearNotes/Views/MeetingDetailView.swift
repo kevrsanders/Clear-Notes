@@ -48,11 +48,53 @@ struct MeetingDetailView: View {
         var id: Self { self }
     }
     @AppStorage(SettingsKeys.myName) private var myName = ""
+    @AppStorage(SettingsKeys.useCalendar) private var useCalendar = false
     @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
+    /// A catch-up's Minutes tab, shown when the user asks for formal minutes.
+    @State private var showMinutes = false
+    /// Diary events on the day it was recorded, offered by "Link to a diary meeting".
+    @State private var diaryChoices: [CalendarMeeting] = []
+    @State private var choosingDiaryEvent = false
+    @State private var noDiaryEvents = false
+    /// "Someone else…" when saying who a catch-up was with.
+    @State private var addingPerson = false
+    @State private var newPersonName = ""
 
-    /// The last meeting in this meeting's series, for the Last time card.
+    /// The last meeting in this meeting's series (or the last catch-up with the same person).
     private var previousMeeting: Meeting? {
-        MeetingSeries.previous(seriesID: meeting.seriesID, title: meeting.title, before: meeting.createdAt, in: allMeetings)
+        MeetingSeries.previous(of: meeting, in: allMeetings)
+    }
+
+    /// Meetings have every tab. A catch-up is lighter: a Summary, Actions and the transcript, with
+    /// Minutes when asked for. A voice note is just the note and the transcript.
+    private var paneItems: [PillTabs<Pane>.Item] {
+        switch meeting.kind {
+        case .meeting:
+            return [
+                .init(value: .overview, title: "Overview"),
+                .init(value: .minutes, title: "Minutes"),
+                .init(value: .actions, title: "Actions", badge: toReview.count),
+                .init(value: .transcript, title: "Transcript"),
+                .init(value: .notes, title: "Notes"),
+            ]
+        case .catchUp:
+            var items: [PillTabs<Pane>.Item] = [
+                .init(value: .overview, title: "Summary"),
+                .init(value: .actions, title: "Actions", badge: toReview.count),
+                .init(value: .transcript, title: "Transcript"),
+            ]
+            if showsMinutes { items.insert(.init(value: .minutes, title: "Minutes"), at: 1) }
+            return items
+        case .voiceNote:
+            return [
+                .init(value: .overview, title: "Note"),
+                .init(value: .transcript, title: "Transcript"),
+            ]
+        }
+    }
+
+    private var showsMinutes: Bool {
+        meeting.kind == .meeting || showMinutes || !meeting.minutes.isEmpty || meeting.minutesInProgress
     }
 
     /// The transcript line being played, for highlighting.
@@ -81,19 +123,17 @@ struct MeetingDetailView: View {
                     if meeting.processingState == .processing {
                         ProcessingCard(meeting: meeting)
                     } else {
-                        speakersSection
-                        PillTabs<Pane>(
-                            items: [
-                                .init(value: .overview, title: "Overview"),
-                                .init(value: .minutes, title: "Minutes"),
-                                .init(value: .actions, title: "Actions", badge: toReview.count),
-                                .init(value: .transcript, title: "Transcript"),
-                                .init(value: .notes, title: "Notes"),
-                            ],
-                            selection: $pane
-                        )
+                        if meeting.kind != .voiceNote {
+                            speakersSection
+                        }
+                        PillTabs<Pane>(items: paneItems, selection: $pane)
                         switch pane {
-                        case .overview: overviewPane
+                        case .overview:
+                            switch meeting.kind {
+                            case .meeting: overviewPane
+                            case .catchUp: catchUpPane
+                            case .voiceNote: voiceNotePane
+                            }
                         case .minutes: MinutesPane(meeting: meeting)
                         case .actions: actionsPane
                         case .transcript: transcriptPane
@@ -219,6 +259,37 @@ struct MeetingDetailView: View {
             Button("Cancel", role: .cancel) {}
         }
         .onChange(of: pane) { _, _ in endSelecting() }
+        // A different type has different tabs, so start again from the first.
+        .onChange(of: meeting.kindRaw) { _, _ in
+            showMinutes = false
+            withAnimation(.snappy) { pane = .overview }
+        }
+        .confirmationDialog("Which diary meeting was it?", isPresented: $choosingDiaryEvent, titleVisibility: .visible) {
+            ForEach(diaryChoices) { event in
+                Button("\(event.title.isEmpty ? "Calendar event" : event.title) · \(event.timeRange)") {
+                    withAnimation(.snappy) { meeting.link(to: event) }
+                    try? context.save()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It takes the meeting's title and who was invited, and shows as recorded in your diary.")
+        }
+        .alert("No diary meetings that day", isPresented: $noDiaryEvents) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Clear Notes couldn't find meetings in your chosen calendars on \(meeting.createdAt.formatted(date: .abbreviated, time: .omitted)).")
+        }
+        .alert("Who was this with?", isPresented: $addingPerson) {
+            TextField("Name", text: $newPersonName)
+                .textContentType(.name)
+            Button("Done") {
+                let name = newPersonName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { meeting.setCatchUpPerson(name) }
+                newPersonName = ""
+            }
+            Button("Cancel", role: .cancel) { newPersonName = "" }
+        }
         .sheet(item: $editingSegment) { segment in
             LineEditor(text: segment.text) { newText in
                 meeting.editSegmentText(segment.id, to: newText)
@@ -277,8 +348,11 @@ struct MeetingDetailView: View {
                 .tracking(-0.4)
                 .fixedSize(horizontal: false, vertical: true)
             FlowLayout(spacing: 6) {
+                if meeting.kind != .meeting {
+                    Chip(text: meeting.kind == .catchUp ? "Catch-up" : meeting.kind.title, systemImage: meeting.kind.systemImage, tint: meeting.kind.tint)
+                }
                 Chip(text: meeting.duration.durationString, systemImage: "clock")
-                if !meeting.speakers.isEmpty {
+                if !meeting.speakers.isEmpty, meeting.kind != .voiceNote {
                     Chip(text: "\(meeting.speakers.count) speaker\(meeting.speakers.count == 1 ? "" : "s")", systemImage: "person.2.fill")
                 }
                 if meeting.teamsJoinURL != nil {
@@ -305,7 +379,7 @@ struct MeetingDetailView: View {
                     NavigationLink {
                         SeriesListView(meeting: meeting)
                     } label: {
-                        Chip(text: "\(series.count) in this series", systemImage: "repeat", tint: Theme.brand)
+                        Chip(text: seriesChipText(series.count), systemImage: "repeat", tint: Theme.brand)
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Shows every meeting in this series")
@@ -315,7 +389,9 @@ struct MeetingDetailView: View {
                 }
                 Chip(text: "On-device", systemImage: "lock.fill", tint: Theme.brand)
             }
-            if !meeting.attendees.isEmpty {
+            if meeting.kind == .catchUp {
+                catchUpPersonMenu
+            } else if !meeting.attendees.isEmpty {
                 Text("Invited: " + meeting.attendees.joined(separator: ", "))
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
@@ -323,6 +399,52 @@ struct MeetingDetailView: View {
             }
         }
         .padding(.top, 4)
+    }
+
+    /// "3 in this series", or "3 with Tom" for catch-ups.
+    private func seriesChipText(_ count: Int) -> String {
+        if let person = meeting.catchUpPerson {
+            let first = person.split(separator: " ").first.map(String.init) ?? person
+            return "\(count) with \(first)"
+        }
+        return "\(count) in this series"
+    }
+
+    /// Who a catch-up was with, which can be changed (e.g. when it wasn't picked while recording).
+    private var catchUpPersonMenu: some View {
+        Menu {
+            ForEach(RecentPeople.list(from: allMeetings, me: myName), id: \.self) { name in
+                Button(name) { withAnimation(.snappy) { meeting.setCatchUpPerson(name) } }
+            }
+            Button("Someone else…") { addingPerson = true }
+            if meeting.catchUpPerson != nil {
+                Button("Nobody in particular") { withAnimation(.snappy) { meeting.setCatchUpPerson(nil) } }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(meeting.catchUpPerson.map { "With \($0)" } ?? "Who was this with?")
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Theme.catchUp)
+        }
+        .accessibilityLabel(meeting.catchUpPerson.map { "With \($0). Change" } ?? "Who was this with?")
+    }
+
+    /// The diary events on the day this was recorded, nearest in time first.
+    private func findDiaryEvents() {
+        let start = meeting.createdAt
+        diaryChoices = CalendarReader.shared.meetingsToday(around: start)
+            .filter(CalendarMeetingPicker.usable)
+            .sorted { abs($0.start.timeIntervalSince(start)) < abs($1.start.timeIntervalSince(start)) }
+            .prefix(8)
+            .map { $0 }
+        if diaryChoices.isEmpty {
+            noDiaryEvents = true
+        } else {
+            choosingDiaryEvent = true
+        }
     }
 
     @ToolbarContentBuilder
@@ -352,6 +474,33 @@ struct MeetingDetailView: View {
                     isRenaming = true
                 } label: {
                     Label("Rename", systemImage: "pencil")
+                }
+                Menu {
+                    Picker("Type", selection: Binding(
+                        get: { meeting.kind },
+                        set: { newKind in withAnimation(.snappy) { meeting.changeKind(to: newKind) } }
+                    )) {
+                        ForEach(MeetingKind.allCases) { kind in
+                            Label(kind.title, systemImage: kind.systemImage).tag(kind)
+                        }
+                    }
+                } label: {
+                    Label("Change type", systemImage: meeting.kind.systemImage)
+                }
+                if useCalendar {
+                    Button {
+                        findDiaryEvents()
+                    } label: {
+                        Label(meeting.isFromDiary ? "Link to a different diary meeting" : "Link to a diary meeting", systemImage: "calendar")
+                    }
+                }
+                if meeting.kind == .catchUp, !showsMinutes {
+                    Button {
+                        showMinutes = true
+                        withAnimation(.snappy) { pane = .minutes }
+                    } label: {
+                        Label("Write minutes", systemImage: "doc.plaintext")
+                    }
                 }
                 Button {
                     Task { await MeetingProcessor.process(meeting) }
@@ -531,72 +680,267 @@ struct MeetingDetailView: View {
 
     private var overviewPane: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if meeting.processingState == .failed {
-                VStack(alignment: .leading, spacing: 12) {
-                    CardHeader(title: "Notes couldn't be generated", systemImage: "exclamationmark.triangle.fill", tint: Theme.warning)
-                    Text(meeting.processingError ?? "Something went wrong.")
-                        .foregroundStyle(Theme.textSecondary)
-                    Button("Try again") {
-                        Task { await MeetingProcessor.process(meeting) }
-                    }
-                    .buttonStyle(PrimaryButtonStyle(compact: true))
-                }
-                .cardStyle()
-            }
-
-            if meeting.processingState == .ready, let caveat = meeting.notesCaveat {
-                VStack(alignment: .leading, spacing: 12) {
-                    CardHeader(title: "About these notes", systemImage: "info.circle.fill", tint: Theme.warning)
-                    Text(caveat)
-                        .foregroundStyle(Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if NotesEnhancers.isAppleIntelligenceAvailable {
-                        Button("Try Apple Intelligence again") {
-                            Task { await MeetingProcessor.process(meeting) }
-                        }
-                        .buttonStyle(SecondaryButtonStyle(compact: true))
-                    }
-                }
-                .cardStyle()
-            }
-
+            statusCards
             document
             if let previousMeeting {
                 lastTimeCard(previousMeeting)
             }
             followUps
+            reviewLink
+            sourceNote
+        }
+    }
 
-            if !toReview.isEmpty {
-                Button {
-                    withAnimation(.snappy) { pane = .actions }
-                } label: {
-                    HStack(spacing: 12) {
-                        IconTile(systemName: "checklist", tint: nil, size: 36)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(toReview.count) action\(toReview.count == 1 ? "" : "s") to review")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            Text("Accept the ones that are right")
-                                .font(.footnote)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.bold))
-                            .foregroundStyle(Theme.textTertiary)
+    /// Why the notes failed, or why they're basic, with a way to try again.
+    @ViewBuilder
+    private var statusCards: some View {
+        if meeting.processingState == .failed {
+            VStack(alignment: .leading, spacing: 12) {
+                CardHeader(title: "Notes couldn't be generated", systemImage: "exclamationmark.triangle.fill", tint: Theme.warning)
+                Text(meeting.processingError ?? "Something went wrong.")
+                    .foregroundStyle(Theme.textSecondary)
+                Button("Try again") {
+                    Task { await MeetingProcessor.process(meeting) }
+                }
+                .buttonStyle(PrimaryButtonStyle(compact: true))
+            }
+            .cardStyle()
+        }
+
+        if meeting.processingState == .ready, let caveat = meeting.notesCaveat {
+            VStack(alignment: .leading, spacing: 12) {
+                CardHeader(title: "About these notes", systemImage: "info.circle.fill", tint: Theme.warning)
+                Text(caveat)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if NotesEnhancers.isAppleIntelligenceAvailable {
+                    Button("Try Apple Intelligence again") {
+                        Task { await MeetingProcessor.process(meeting) }
                     }
-                    .cardStyle(padding: 16)
+                    .buttonStyle(SecondaryButtonStyle(compact: true))
+                }
+            }
+            .cardStyle()
+        }
+    }
+
+    /// "3 actions to review", opening the Actions tab.
+    @ViewBuilder
+    private var reviewLink: some View {
+        if !toReview.isEmpty {
+            Button {
+                withAnimation(.snappy) { pane = .actions }
+            } label: {
+                HStack(spacing: 12) {
+                    IconTile(systemName: "checklist", tint: nil, size: 36)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(toReview.count) action\(toReview.count == 1 ? "" : "s") to review")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Text("Accept the ones that are right")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .cardStyle(padding: 16)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var sourceNote: some View {
+        if let source = meeting.insightsSource {
+            Label("Written by \(source). Check before sharing.", systemImage: "info.circle")
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.horizontal, 4)
+        }
+    }
+
+    // MARK: - Catch-ups and voice notes
+
+    /// Actions still to do or to review, for a catch-up's summary.
+    private var summaryActions: [ActionItem] { open + toReview }
+
+    /// What was covered, what was agreed and the actions, on one card.
+    private var catchUpPane: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            statusCards
+            VStack(alignment: .leading, spacing: 16) {
+                CardHeader(title: "What you covered", systemImage: MeetingKind.catchUp.systemImage, tint: Theme.catchUp)
+                BulletList(text: meeting.summary.isEmpty ? "No summary yet." : meeting.summary)
+                if !meeting.decisions.isEmpty || !summaryActions.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(Array(meeting.decisions.enumerated()), id: \.offset) { _, decision in
+                            taggedRow("Agreed", tint: Theme.success, text: decision)
+                        }
+                        ForEach(summaryActions) { action in
+                            Button {
+                                editingAction = action
+                            } label: {
+                                taggedRow(action.status == .suggested ? "Suggested" : "Action", tint: Theme.brand, text: actionLine(action))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Edit, assign or accept it")
+                        }
+                    }
+                }
+            }
+            .cardStyle(padding: 22)
+            reviewLink
+            if let previousMeeting {
+                lastTimeCard(previousMeeting)
+            }
+            myNotesCard
+            if !showsMinutes {
+                Button {
+                    showMinutes = true
+                    withAnimation(.snappy) { pane = .minutes }
+                } label: {
+                    Label("Write formal minutes", systemImage: "doc.plaintext")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.brand)
                 }
                 .buttonStyle(.plain)
+                .padding(.horizontal, 4)
             }
+            sourceNote
+        }
+    }
 
-            if let source = meeting.insightsSource {
-                Label("Written by \(source). Check before sharing.", systemImage: "info.circle")
+    /// The note, a to-do list to tick off, and the user's own notes.
+    private var voiceNotePane: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            statusCards
+            VStack(alignment: .leading, spacing: 14) {
+                CardHeader(title: "Note", systemImage: MeetingKind.voiceNote.systemImage, tint: Theme.voiceNote)
+                BulletList(text: meeting.summary.isEmpty ? "No note yet." : meeting.summary)
+            }
+            .cardStyle(padding: 22)
+            todoCard
+            myNotesCard
+            if meeting.speakers.isEmpty {
+                Label("Just you: speakers aren't identified and no voice profiles are made.", systemImage: "person.fill")
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
                     .padding(.horizontal, 4)
             }
+            sourceNote
         }
+    }
+
+    /// Open and suggested to-dos first, then done ones.
+    private var todos: [ActionItem] { toReview + open + done }
+
+    private var todoCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            CardHeader(title: "To-dos", systemImage: "checklist", tint: Theme.voiceNote)
+                .padding(.bottom, 8)
+            ForEach(todos) { action in
+                todoRow(action)
+                Divider()
+            }
+            HStack(spacing: 10) {
+                Image(systemName: "plus")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Theme.brand)
+                TextField("Add a to-do", text: $newActionText)
+                    .submitLabel(.done)
+                    .onSubmit(addAction)
+            }
+            .padding(.vertical, 8)
+        }
+        .cardStyle()
+    }
+
+    private func todoRow(_ action: ActionItem) -> some View {
+        let isDone = action.status == .done
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Button {
+                withAnimation(.snappy) {
+                    action.status = isDone ? .open : .done
+                    try? context.save()
+                }
+            } label: {
+                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isDone ? Theme.success : Theme.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isDone ? "Done. Mark as not done" : "Mark as done")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(action.text)
+                    .strikethrough(isDone)
+                    .foregroundStyle(isDone ? Theme.textSecondary : Color.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let due = action.due {
+                    Text(due)
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture { editingAction = action }
+        .contextMenu {
+            Button {
+                editingAction = action
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                withAnimation(.snappy) {
+                    meeting.actions.removeAll { $0.persistentModelID == action.persistentModelID }
+                    context.delete(action)
+                    try? context.save()
+                }
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    /// The user's own notes, on the same page for catch-ups and voice notes.
+    private var myNotesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CardHeader(title: "My notes", systemImage: "pencil.line", tint: Theme.brand)
+            TextField("Add notes", text: $meeting.userNotes, axis: .vertical)
+                .lineLimit(3...)
+        }
+        .cardStyle()
+    }
+
+    /// "Share the new rota — Tom Ellis, by Friday"
+    private func actionLine(_ action: ActionItem) -> String {
+        let who = [action.owner, action.due].compactMap { $0 }.joined(separator: ", ")
+        return who.isEmpty ? action.text : "\(action.text) — \(who)"
+    }
+
+    private func taggedRow(_ tag: String, tint: Color, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(tag.uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .tracking(0.5)
+                .foregroundStyle(tint)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(tint.opacity(0.12), in: Capsule())
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
     }
 
     /// Summary, topics and decisions on one surface, so the notes read like a page.

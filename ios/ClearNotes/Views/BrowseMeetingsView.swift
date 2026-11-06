@@ -140,8 +140,8 @@ struct MeetingCalendar: UIViewRepresentable {
     }
 }
 
-/// Every recorded meeting in a series (the same repeating calendar meeting, or the same title),
-/// newest first.
+/// Every recorded meeting in a series (the same repeating calendar meeting, or the same title), or
+/// every catch-up with the same person, newest first.
 struct SeriesListView: View {
     let meeting: Meeting
     @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
@@ -151,7 +151,7 @@ struct SeriesListView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("\(series.count) meetings")
+                Text("\(series.count) \(meeting.kind == .catchUp ? "catch-ups" : "meetings")")
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
                 ForEach(series) { item in

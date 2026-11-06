@@ -14,6 +14,9 @@ enum Theme {
     static let success = Color.dynamic(light: 0x22C55E, dark: 0x30D158)
     static let warning = Color.dynamic(light: 0xD97706, dark: 0xFFB020)
     static let record = Color(hex: 0xFF4D6A)
+    /// Meeting types: a quick catch-up and a voice note. Meetings use the brand colour.
+    static let catchUp = Color.dynamic(light: 0x0E9AB2, dark: 0x40C8E0)
+    static let voiceNote = Color.dynamic(light: 0xE07B00, dark: 0xFFA53D)
 
     static let brandGradient = LinearGradient(
         colors: [Color(hex: 0x7C5CFF), Color(hex: 0x4F7BFF)],

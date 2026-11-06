@@ -70,6 +70,31 @@ enum ProcessingStage: String, Codable {
     case transcript, speakers, notes
 }
 
+/// What was recorded. A meeting may come from the diary (linked to a calendar event) or not; a
+/// quick catch-up is a short chat with one or two people; a voice note is just the user.
+enum MeetingKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case meeting, catchUp, voiceNote
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .meeting: "Meeting"
+        case .catchUp: "Quick catch-up"
+        case .voiceNote: "Voice note"
+        }
+    }
+
+    /// Starts the default title, e.g. "Catch-up · Fri 6 Nov 10:00".
+    var titlePrefix: String {
+        switch self {
+        case .meeting: "Meeting"
+        case .catchUp: "Catch-up"
+        case .voiceNote: "Voice note"
+        }
+    }
+}
+
 @Model
 final class Meeting {
     var title: String
@@ -135,6 +160,11 @@ final class Meeting {
     /// Who shared this meeting, when it was imported from a Clear Notes file.
     var sharedBy: String?
     var importedAt: Date?
+    /// What was recorded (see `MeetingKind`). Meetings recorded before types existed are meetings.
+    var kindRaw: String = MeetingKind.meeting.rawValue
+    /// The diary event this was recorded for (`CalendarMeeting.id`), so today's diary can show it
+    /// as recorded.
+    var calendarEventID: String?
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []
@@ -176,14 +206,76 @@ final class Meeting {
         actions.filter { $0.status == .open || $0.status == .suggested }.count
     }
 
-    static func defaultTitle(for date: Date) -> String {
-        "Meeting · " + date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
+    var kind: MeetingKind {
+        get { MeetingKind(rawValue: kindRaw) ?? .meeting }
+        set { kindRaw = newValue.rawValue }
+    }
+
+    static func defaultTitle(for date: Date, kind: MeetingKind = .meeting) -> String {
+        kind.titlePrefix + " · " + date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
+    }
+
+    /// The title Clear Notes gave it, of any type, which the notes may replace with a better one.
+    var hasDefaultTitle: Bool {
+        MeetingKind.allCases.contains { title == Self.defaultTitle(for: createdAt, kind: $0) }
+    }
+
+    // MARK: - Types
+
+    /// Recorded for an event in the user's diary, as opposed to an ad hoc recording. Meetings
+    /// recorded before the event was kept count when they took the event's people or series.
+    var isFromDiary: Bool {
+        kind == .meeting && (calendarEventID != nil || seriesID != nil || teamsJoinURL != nil || !attendees.isEmpty)
+    }
+
+    /// Who a catch-up was with: the first person listed who isn't the user.
+    var catchUpPerson: String? {
+        guard kind == .catchUp else { return nil }
+        let me = UserDefaults.standard.string(forKey: SettingsKeys.myName)?.trimmingCharacters(in: .whitespaces) ?? ""
+        return attendees.first { me.isEmpty || $0.caseInsensitiveCompare(me) != .orderedSame }
+    }
+
+    static func catchUpTitle(with person: String) -> String {
+        "Catch-up with \(person)"
+    }
+
+    /// Sets who a catch-up was with, and the title to "Catch-up with …" unless the user renamed it.
+    func setCatchUpPerson(_ name: String?) {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let titleIsOurs = hasDefaultTitle || catchUpPerson.map { title == Self.catchUpTitle(with: $0) } == true
+        attendees = trimmed.isEmpty ? [] : [trimmed]
+        if titleIsOurs {
+            title = trimmed.isEmpty ? Self.defaultTitle(for: createdAt, kind: .catchUp) : Self.catchUpTitle(with: trimmed)
+        }
+        try? modelContext?.save()
+    }
+
+    /// Changes what this was recorded as, e.g. a meeting that was really a catch-up. A title Clear
+    /// Notes gave it follows the new type; one the user or the notes wrote is kept.
+    func changeKind(to newKind: MeetingKind) {
+        guard newKind != kind else { return }
+        let person = catchUpPerson
+        let titleIsOurs = hasDefaultTitle || person.map { title == Self.catchUpTitle(with: $0) } == true
+        kind = newKind
+        if titleIsOurs {
+            title = newKind == .catchUp ? (catchUpPerson.map(Self.catchUpTitle(with:)) ?? Self.defaultTitle(for: createdAt, kind: newKind))
+                : Self.defaultTitle(for: createdAt, kind: newKind)
+        }
+        if newKind == .voiceNote {
+            // To-dos in a voice note are the user's own, so suggestions don't wait for review.
+            for action in actions where action.status == .suggested {
+                action.status = .open
+            }
+        }
+        try? modelContext?.save()
     }
 
     // MARK: - Calendar
 
     /// Takes the title, invited people and Teams link from the calendar event this recording was made in.
     func link(to event: CalendarMeeting) {
+        kind = .meeting
+        calendarEventID = event.id
         if !event.title.isEmpty { title = event.title }
         // The person recording was at the meeting, as organiser or attendee, so they're listed
         // first: by the calendar's name for them, or else their name from Settings.

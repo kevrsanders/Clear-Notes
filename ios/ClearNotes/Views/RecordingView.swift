@@ -8,8 +8,10 @@ struct RecordingView: View {
         case transcript, notes
     }
 
-    /// The calendar event this recording is for. Found automatically when not given.
+    /// The diary event this recording is for, chosen on the Record sheet.
     @State var calendarMeeting: CalendarMeeting? = nil
+    /// What's being recorded: a meeting, a quick catch-up or a voice note.
+    var kind: MeetingKind = .meeting
     var onFinish: (RecordingResult, String, CalendarMeeting?) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -26,6 +28,11 @@ struct RecordingView: View {
     @State private var showLastTime = false
     /// How many people are in the meeting, if the user says. Optional: Auto works it out.
     @State private var peopleCount: Int?
+    /// Who a catch-up is with, picked while recording (or later, on the meeting).
+    @State private var person: String?
+    @State private var addingPerson = false
+    @State private var newPersonName = ""
+    @AppStorage(SettingsKeys.myName) private var myName = ""
     @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
     @FocusState private var notesFocused: Bool
 
@@ -55,6 +62,15 @@ struct RecordingView: View {
                 header
                 if let calendarMeeting, errorMessage == nil {
                     linkedMeeting(calendarMeeting)
+                } else if errorMessage == nil, kind == .catchUp {
+                    catchUpBar
+                } else if errorMessage == nil, kind == .voiceNote {
+                    Label("Voice note · just me", systemImage: "mic.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.voiceNote)
+                        .padding(.horizontal, 14)
+                        .frame(height: 34)
+                        .background(Theme.voiceNote.opacity(0.14), in: Capsule())
                 }
                 if let errorMessage {
                     errorView(errorMessage)
@@ -96,7 +112,17 @@ struct RecordingView: View {
                     .presentationCornerRadius(32)
             }
         }
-        .confirmationDialog("Discard this meeting?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+        .alert("Who's this with?", isPresented: $addingPerson) {
+            TextField("Name", text: $newPersonName)
+                .textContentType(.name)
+            Button("Done") {
+                let name = newPersonName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { withAnimation(.snappy) { person = name } }
+                newPersonName = ""
+            }
+            Button("Cancel", role: .cancel) { newPersonName = "" }
+        }
+        .confirmationDialog(kind == .voiceNote ? "Discard this voice note?" : "Discard this meeting?", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("Discard", role: .destructive) {
                 recorder.discard()
                 dismiss()
@@ -136,7 +162,7 @@ struct RecordingView: View {
             .frame(height: 40)
             .glass(in: Capsule())
             Spacer()
-            if identifySpeakers && SpeakerSeparators.isSupported {
+            if identifySpeakers && SpeakerSeparators.isSupported && kind != .voiceNote {
                 peopleMenu
             } else {
                 Color.clear.frame(width: 40, height: 40)
@@ -245,6 +271,81 @@ struct RecordingView: View {
         .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
     }
 
+    /// "Who's this with?": recent people one tap away, or someone else. Optional, and can be
+    /// changed on the meeting afterwards.
+    @ViewBuilder
+    private var catchUpBar: some View {
+        if let person {
+            HStack(spacing: 10) {
+                Image(systemName: MeetingKind.catchUp.systemImage)
+                    .foregroundStyle(Theme.catchUp)
+                Text("Catch-up with ").foregroundStyle(Color.primary.opacity(0.6))
+                    + Text(person).fontWeight(.semibold).foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                Button {
+                    withAnimation(.snappy) { self.person = nil }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color.primary.opacity(0.7))
+                        .frame(width: 30, height: 30)
+                        .background(Color.primary.opacity(0.1), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Someone else")
+            }
+            .font(.subheadline)
+            .lineLimit(1)
+            .padding(.leading, 14)
+            .padding(.trailing, 8)
+            .padding(.vertical, 8)
+            .background(Color.primary.opacity(0.06), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Quick catch-up · who's this with?", systemImage: MeetingKind.catchUp.systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.catchUp)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(RecentPeople.list(from: meetings, me: myName), id: \.self) { name in
+                            Button {
+                                withAnimation(.snappy) { person = name }
+                            } label: {
+                                personChip(name)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Button {
+                            addingPerson = true
+                        } label: {
+                            personChip("Someone else", systemImage: "plus")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .scrollClipDisabled()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func personChip(_ name: String, systemImage: String? = nil) -> some View {
+        HStack(spacing: 5) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.bold))
+            }
+            Text(name)
+        }
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(Color.primary.opacity(0.07), in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+    }
+
     private var statusText: String {
         switch recorder.state {
         case .idle: isFinishing ? "Saving…" : "Starting…"
@@ -258,7 +359,7 @@ struct RecordingView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if identifySpeakers && SpeakerSeparators.isSupported {
+                    if identifySpeakers && SpeakerSeparators.isSupported && kind != .voiceNote {
                         Label("Speakers are identified when you finish", systemImage: "person.2.wave.2")
                             .font(.footnote)
                             .foregroundStyle(Color.primary.opacity(0.45))
@@ -331,8 +432,13 @@ struct RecordingView: View {
     /// each mark become an action or decision.
     private var markBar: some View {
         HStack(spacing: 10) {
-            markButton(.action, title: "Mark action", systemImage: "checkmark.circle.fill")
-            markButton(.decision, title: "Mark decision", systemImage: "signpost.right.fill")
+            if kind == .voiceNote {
+                // A voice note's actions are the user's own to-dos; there's nobody to agree with.
+                markButton(.action, title: "Mark to-do", systemImage: "checkmark.circle.fill")
+            } else {
+                markButton(.action, title: "Mark action", systemImage: "checkmark.circle.fill")
+                markButton(.decision, title: "Mark decision", systemImage: "signpost.right.fill")
+            }
         }
         .sensoryFeedback(.success, trigger: recorder.marks.count)
     }
@@ -367,7 +473,7 @@ struct RecordingView: View {
         .opacity(isRecording ? 1 : 0.5)
         .accessibilityLabel(title)
         .accessibilityValue(count > 0 ? "\(count) marked" : "")
-        .accessibilityHint("Tap just after it's agreed")
+        .accessibilityHint(kind == .voiceNote ? "Tap just after saying something you need to do" : "Tap just after it's agreed")
     }
 
     private var controls: some View {
@@ -437,8 +543,9 @@ struct RecordingView: View {
     // MARK: - Actions
 
     private func start() async {
-        if calendarMeeting == nil {
-            calendarMeeting = CalendarReader.shared.currentMeeting()
+        // Two voices in a catch-up, unless the user says otherwise.
+        if kind == .catchUp, peopleCount == nil {
+            peopleCount = 2
         }
         guard await MeetingRecorder.requestPermissions() else {
             errorMessage = RecorderError.permissionDenied.errorDescription
@@ -447,7 +554,8 @@ struct RecordingView: View {
         do {
             try await recorder.start(
                 requireOnDevice: requireOnDevice,
-                captureAudioForSpeakers: (identifySpeakers && SpeakerSeparators.isSupported) || AudioRetention.current.keepsAudio,
+                captureAudioForSpeakers: (identifySpeakers && SpeakerSeparators.isSupported && kind != .voiceNote)
+                    || AudioRetention.current.keepsAudio,
                 reduceEchoAndNoise: reduceEchoAndNoise
             )
         } catch {
@@ -468,6 +576,8 @@ struct RecordingView: View {
         notesFocused = false
         var result = await recorder.stop()
         result.expectedSpeakers = peopleCount
+        result.kind = calendarMeeting == nil ? kind : .meeting
+        result.person = kind == .catchUp ? person : nil
         onFinish(result, notes, calendarMeeting)
         dismiss()
     }

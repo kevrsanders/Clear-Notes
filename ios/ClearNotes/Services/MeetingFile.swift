@@ -75,6 +75,8 @@ struct SharedMeeting: Codable, Equatable, Sendable {
     var notesCaveat: String?
     var notesSource: String?
     var recording: Recording?
+    /// What was recorded: "meeting", "catchUp" or "voiceNote". Missing (older files) means a meeting.
+    var kind: String? = nil
 }
 
 enum MeetingFileError: LocalizedError, Equatable {

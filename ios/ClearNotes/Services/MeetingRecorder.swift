@@ -11,6 +11,9 @@ struct RecordingResult {
     var marks: [MeetingMark] = []
     /// How many people the user said are in the meeting, or nil for Auto.
     var expectedSpeakers: Int?
+    /// What the user said they were recording, and who a catch-up was with.
+    var kind: MeetingKind = .meeting
+    var person: String?
 }
 
 enum RecorderError: LocalizedError {

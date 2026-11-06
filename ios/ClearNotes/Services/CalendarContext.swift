@@ -73,7 +73,8 @@ enum CalendarMeetingPicker {
     /// not meetings, so they're ignored like all-day events.
     static let longestMeeting: TimeInterval = 6 * 3_600
 
-    private static func usable(_ meeting: CalendarMeeting) -> Bool {
+    /// A timed event that's going ahead: not all day, cancelled, declined or a long block.
+    static func usable(_ meeting: CalendarMeeting) -> Bool {
         let length = meeting.end.timeIntervalSince(meeting.start)
         return !meeting.isAllDay && !meeting.isCancelledOrDeclined && length > 0 && length < longestMeeting
     }

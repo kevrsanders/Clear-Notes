@@ -85,6 +85,7 @@ A reader checks the size and hash against the pieces it received, so a damaged o
 | `decisions` | [string] | |
 | `actions` | [{`text`, `owner`?, `due`?, `status`, `sourceLineID`?}] | `status` is `suggested`, `open`, `done` or `dismissed`. Dismissed actions aren't shared. `sourceLineID` is a transcript line's `id`. |
 | `minutes` | string? | Plain-text minutes (numbered items, `Agreed:` and `Action:` lines). |
+| `kind` | string? | What was recorded: `meeting`, `catchUp` (a quick catch-up; `invited` holds who it was with) or `voiceNote`. Missing means `meeting`. |
 | `privateNotes` | string? | Only when the sender chose to include them. |
 | `notesCaveat` | string? | Why some notes are basic, if they are. |
 | `notesSource` | string? | What wrote the notes, e.g. Apple Intelligence. |

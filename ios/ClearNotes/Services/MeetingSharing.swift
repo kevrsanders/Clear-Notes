@@ -77,7 +77,8 @@ enum MeetingSharing {
             privateNotes: options.includePrivateNotes && !notes.isEmpty ? notes : nil,
             notesCaveat: meeting.notesCaveat,
             notesSource: meeting.insightsSource,
-            recording: recordingBytes.map { SharedMeeting.Recording(byteCount: $0, fileExtension: "caf") }
+            recording: recordingBytes.map { SharedMeeting.Recording(byteCount: $0, fileExtension: "caf") },
+            kind: meeting.kind.rawValue
         )
     }
 
@@ -173,6 +174,7 @@ enum MeetingSharing {
         meeting.createdAt = shared.date
         meeting.duration = shared.duration
         meeting.attendees = shared.invited
+        meeting.kind = shared.kind.flatMap(MeetingKind.init(rawValue:)) ?? .meeting
         meeting.speakers = shared.speakers.map { Speaker(id: $0.id, number: $0.number, name: $0.name) }
         meeting.segments = shared.transcript.map {
             TranscriptSegment(id: $0.id, start: $0.start, end: $0.end, text: $0.text, speakerID: $0.speakerID)

@@ -340,7 +340,7 @@ enum MeetingProcessor {
     static func apply(_ insights: MeetingInsights, marked: MarkedItems = MarkedItems(), to meeting: Meeting) {
         if let title = insights.title?.trimmingCharacters(in: .whitespacesAndNewlines),
            !title.isEmpty,
-           meeting.title == Meeting.defaultTitle(for: meeting.createdAt) {
+           meeting.hasDefaultTitle {
             meeting.title = title
         }
         meeting.summary = insights.summary
@@ -388,12 +388,14 @@ enum MeetingProcessor {
             setting: .current
         )
         .filter { !known.contains($0.task.lowercased()) }
-        .map { extracted in
-            ActionItem(
+        .map { extracted -> ActionItem in
+            // A voice note's to-dos are the user's own: nobody to assign and nothing to review.
+            let isVoiceNote = meeting.kind == .voiceNote
+            return ActionItem(
                 text: extracted.task,
-                owner: matchOwner(extracted.owner),
+                owner: isVoiceNote ? nil : matchOwner(extracted.owner),
                 due: extracted.due,
-                status: .suggested,
+                status: isVoiceNote ? .open : .suggested,
                 sourceSegmentID: meeting.segments.segment(matching: extracted.evidence)?.id
             )
         }

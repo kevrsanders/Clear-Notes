@@ -1,7 +1,8 @@
 import SwiftData
 import SwiftUI
 
-/// Home: greeting, quick stats, meetings grouped by day and the floating Record button.
+/// Home: greeting, today's diary, quick stats, and meetings grouped by day, which can be filtered by
+/// type. Record (in the tab bar) asks what's being recorded.
 struct MeetingsListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
@@ -20,8 +21,14 @@ struct MeetingsListView: View {
     @State private var finishedMeeting: Meeting?
     /// Today's calendar events, when Use my calendar is on.
     @State private var todaysEvents: [CalendarMeeting] = []
-    /// The event the user tapped Record on. Nil lets the recorder find the meeting happening now.
+    /// The diary event being recorded, if any.
     @State private var recordingEvent: CalendarMeeting?
+    /// What's being recorded: a meeting, a quick catch-up or a voice note.
+    @State private var recordingKind: MeetingKind = .meeting
+    /// The Record sheet ("What are you recording?"), and what was chosen on it.
+    @State private var choosingRecording = false
+    @State private var pendingChoice: RecordChoice?
+    @State private var filter: MeetingFilter = .all
     /// The previous meeting in the Up next meeting's series, shown in a sheet.
     @State private var lastTimeMeeting: Meeting?
     /// Opened after the Last time sheet closes, when the user asks for the full meeting.
@@ -32,13 +39,13 @@ struct MeetingsListView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
-                    if search.isEmpty, let upNext {
-                        UpNextCard(
-                            event: upNext.event,
-                            isNow: upNext.isNow,
-                            lastTime: previousMeeting(for: upNext.event),
-                            onShowLastTime: { lastTimeMeeting = $0 },
-                            onRecord: { newMeeting(for: upNext.event) }
+                    if search.isEmpty, !diaryEntries.isEmpty {
+                        DiaryTodayCard(
+                            entries: diaryEntries,
+                            lastTime: diaryLastTime,
+                            onRecord: { newMeeting(for: $0, kind: .meeting) },
+                            onOpen: { path.append($0) },
+                            onShowLastTime: { lastTimeMeeting = $0 }
                         )
                     }
                     SearchField(text: $search)
@@ -46,6 +53,14 @@ struct MeetingsListView: View {
                         emptyState
                     } else if search.isEmpty {
                         stats
+                        filterBar
+                        if sections.isEmpty {
+                            Text("Nothing here yet. Tap Record and choose \(filter == .voiceNotes ? "Voice note" : filter == .catchUps ? "Quick catch-up" : "a diary meeting").")
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .cardStyle()
+                        }
                         ForEach(sections) { section in
                             VStack(alignment: .leading, spacing: 12) {
                                 Eyebrow(section.title)
@@ -90,10 +105,24 @@ struct MeetingsListView: View {
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(32)
             }
-            // Record lives in the tab bar now (see ContentView), which posts this.
+            // Record lives in the tab bar (see ContentView), which posts this.
             .onReceive(NotificationCenter.default.publisher(for: .startRecording)) { _ in
                 path = []
-                newMeeting(for: nil)
+                refreshCalendar()
+                choosingRecording = true
+            }
+            .sheet(isPresented: $choosingRecording, onDismiss: {
+                guard let choice = pendingChoice else { return }
+                pendingChoice = nil
+                newMeeting(for: choice.event, kind: choice.kind)
+            }) {
+                RecordChoiceSheet(current: recordNow, others: recordOthers, calendarOn: useCalendar) { choice in
+                    pendingChoice = choice
+                    choosingRecording = false
+                }
+                .presentationDetents(recordNow != nil || !recordOthers.isEmpty ? [PresentationDetent.large] : [PresentationDetent.fraction(0.66), .large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(32)
             }
         }
         .task(id: useCalendar) {
@@ -120,7 +149,7 @@ struct MeetingsListView: View {
             .presentationCornerRadius(32)
         }
         .fullScreenCover(isPresented: $showRecorder, onDismiss: openFinishedMeeting) {
-            RecordingView(calendarMeeting: recordingEvent, onFinish: saveMeeting)
+            RecordingView(calendarMeeting: recordingEvent, kind: recordingKind, onFinish: saveMeeting)
         }
     }
 
@@ -173,6 +202,32 @@ struct MeetingsListView: View {
             StatTile(title: "All", value: "\(meetings.count)", hint: "\(time(meetings)) in total", tint: .primary)
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// All · Diary · Catch-ups · Voice notes.
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(MeetingFilter.allCases) { option in
+                    Button {
+                        withAnimation(.snappy) { filter = option }
+                    } label: {
+                        Text(option.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(filter == option ? Color.primary : Theme.textSecondary)
+                            .padding(.horizontal, 14)
+                            .frame(height: 34)
+                            .background {
+                                Capsule().fill(filter == option ? Theme.surfaceRaised : Color.primary.opacity(0.05))
+                            }
+                            .overlay(Capsule().strokeBorder(Theme.stroke))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(filter == option ? .isSelected : [])
+                }
+            }
+        }
+        .scrollClipDisabled()
     }
 
     private var emptyState: some View {
@@ -231,14 +286,15 @@ struct MeetingsListView: View {
     private var sections: [MeetingSection] {
         let calendar = Calendar.current
         let weekStart = calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: .now)) ?? .now
-        let today = meetings.filter { calendar.isDateInToday($0.createdAt) }
-        let week = meetings.filter { !calendar.isDateInToday($0.createdAt) && $0.createdAt >= weekStart }
+        let shown = meetings.filter { filter.matches($0) }
+        let today = shown.filter { calendar.isDateInToday($0.createdAt) }
+        let week = shown.filter { !calendar.isDateInToday($0.createdAt) && $0.createdAt >= weekStart }
         var result = [
             MeetingSection(title: "Today", meetings: today),
             MeetingSection(title: "This week", meetings: week),
         ]
         // Meetings are newest first, so months come out newest first too.
-        for meeting in meetings where meeting.createdAt < weekStart {
+        for meeting in shown where meeting.createdAt < weekStart {
             let month = meeting.createdAt.formatted(.dateTime.month(.wide).year())
             if result.last?.title == month {
                 result[result.count - 1].meetings.append(meeting)
@@ -257,6 +313,34 @@ struct MeetingsListView: View {
         CalendarMeetingPicker.upNext(in: todaysEvents, at: .now)
     }
 
+    /// Today's diary: what was recorded, what's on now and what's later.
+    private var diaryEntries: [DiaryEntry] {
+        DiaryDay.entries(events: todaysEvents, meetings: meetings, now: .now)
+    }
+
+    /// "Last time" for the meeting on now or next, when an earlier one in its series was recorded.
+    private var diaryLastTime: Meeting? {
+        guard let upNext else { return nil }
+        let isListed = diaryEntries.contains { $0.event.id == upNext.event.id && $0.status != .recorded }
+        return isListed ? previousMeeting(for: upNext.event) : nil
+    }
+
+    /// The diary meeting on now or about to start, offered first on the Record sheet.
+    private var recordNow: CalendarMeeting? {
+        guard useCalendar else { return nil }
+        return CalendarMeetingPicker.current(in: todaysEvents, at: .now)
+    }
+
+    /// Today's other diary meetings with people, from a couple of hours ago (one that overran) on.
+    private var recordOthers: [CalendarMeeting] {
+        guard useCalendar else { return [] }
+        let now = Date.now
+        return todaysEvents.filter { event in
+            CalendarMeetingPicker.usable(event) && event.hasPeople && event.id != recordNow?.id
+                && event.end > now.addingTimeInterval(-2 * 3_600)
+        }
+    }
+
     /// The last meeting in the same series as a calendar event, if one was recorded.
     private func previousMeeting(for event: CalendarMeeting) -> Meeting? {
         MeetingSeries.previous(seriesID: event.seriesID, title: event.title, before: event.start, in: meetings)
@@ -268,9 +352,11 @@ struct MeetingsListView: View {
 
     // MARK: - Recording
 
-    private func newMeeting(for event: CalendarMeeting?) {
+    private func newMeeting(for event: CalendarMeeting?, kind: MeetingKind) {
         recordingEvent = event
-        if showConsentReminder {
+        recordingKind = kind
+        // Nobody else is recorded in a voice note, so there's no one to tell.
+        if showConsentReminder && kind != .voiceNote {
             showConsent = true
         } else {
             showRecorder = true
@@ -279,9 +365,10 @@ struct MeetingsListView: View {
 
     private func saveMeeting(_ result: RecordingResult, notes: String, event: CalendarMeeting?) {
         let start = Date().addingTimeInterval(-result.duration)
-        let separatesSpeakers = identifySpeakers && SpeakerSeparators.isSupported
+        // A voice note is just the user, so there are no voices to tell apart.
+        let separatesSpeakers = identifySpeakers && SpeakerSeparators.isSupported && result.kind != .voiceNote
         let meeting = Meeting(
-            title: Meeting.defaultTitle(for: start),
+            title: Meeting.defaultTitle(for: start, kind: result.kind),
             createdAt: start,
             duration: result.duration,
             userNotes: notes,
@@ -289,9 +376,12 @@ struct MeetingsListView: View {
             pendingAudioFileName: separatesSpeakers ? result.audioFileName : nil
         )
         meeting.marks = result.marks
-        meeting.expectedSpeakers = result.expectedSpeakers
+        meeting.expectedSpeakers = result.kind == .voiceNote ? nil : result.expectedSpeakers
+        meeting.kind = result.kind
         if let event {
             meeting.link(to: event)
+        } else if result.kind == .catchUp {
+            meeting.setCatchUpPerson(result.person)
         }
         if !separatesSpeakers {
             meeting.keepAudio(result.audioFileName)
@@ -308,91 +398,106 @@ struct MeetingsListView: View {
     }
 }
 
-/// The meeting happening now, or next today, with one tap to record it.
-private struct UpNextCard: View {
-    let event: CalendarMeeting
-    let isNow: Bool
-    /// The previous meeting in this series, if one was recorded.
+/// Today's diary at a glance: each meeting with whether it was recorded, is on now (one tap to
+/// record), is later, or went by without a recording.
+private struct DiaryTodayCard: View {
+    let entries: [DiaryEntry]
+    /// The previous meeting in the series of the meeting on now or next, for "Last time".
     var lastTime: Meeting?
+    var onRecord: (CalendarMeeting) -> Void
+    var onOpen: (Meeting) -> Void
     var onShowLastTime: (Meeting) -> Void
-    var onRecord: () -> Void
-
-    private var people: [Speaker] {
-        event.attendees.enumerated().map { index, name in
-            Speaker(id: "\(index)", number: index + 1, name: name)
-        }
-    }
-
-    private var peopleLine: String {
-        let names = event.attendees
-        guard names.count > 2 else { return names.joined(separator: ", ") }
-        return names.prefix(2).joined(separator: ", ") + " +\(names.count - 2)"
-    }
 
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    if isNow {
-                        Circle()
-                            .fill(Theme.record)
-                            .frame(width: 7, height: 7)
-                    }
-                    Eyebrow("\(isNow ? "Now" : "Next") · \(event.timeRange)")
-                }
-                Text(event.title.isEmpty ? "Calendar event" : event.title)
-                    .font(.headline)
-                    .lineLimit(2)
-                if !people.isEmpty || event.teamsJoinURL != nil || event.calendarName != nil {
-                    HStack(spacing: 8) {
-                        if !people.isEmpty {
-                            AvatarStack(speakers: people, size: 22, limit: 3)
-                            Text(peopleLine)
-                                .font(.footnote)
-                                .foregroundStyle(Theme.textSecondary)
-                                .lineLimit(1)
-                        }
-                        if event.teamsJoinURL != nil {
-                            Chip(text: "Teams", systemImage: "video.fill", tint: Theme.brand)
-                        }
-                        if let calendarName = event.calendarName {
-                            // Shown when it isn't the main calendar, so it's clear where an event comes from.
-                            Chip(text: calendarName, systemImage: "calendar")
-                        }
-                    }
-                }
-                if let lastTime {
-                    Button {
-                        onShowLastTime(lastTime)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "clock.arrow.circlepath")
-                            Text(LastTime.summaryLine(lastTime))
-                                .lineLimit(1)
-                            Image(systemName: "chevron.right")
-                                .font(.caption2.weight(.bold))
-                        }
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Theme.brand)
-                        .padding(.top, 2)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Shows the summary and actions from the last meeting in this series")
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            Eyebrow("Today in your diary")
+                .padding(.bottom, 6)
+            ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                if index > 0 { Divider() }
+                row(entry)
             }
-            Spacer(minLength: 0)
-            Button(action: onRecord) {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 50, height: 50)
-                    .background(Theme.recordGradient, in: Circle())
-                    .shadow(color: Theme.record.opacity(0.35), radius: 10, y: 4)
+            if let lastTime {
+                Button {
+                    onShowLastTime(lastTime)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.arrow.circlepath")
+                        Text(LastTime.summaryLine(lastTime))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.brand)
+                    .padding(.top, 10)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows the summary and actions from the last meeting in this series")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Record \(event.title.isEmpty ? "this meeting" : event.title)")
         }
         .cardStyle()
+    }
+
+    @ViewBuilder
+    private func row(_ entry: DiaryEntry) -> some View {
+        let content = HStack(spacing: 12) {
+            Text(entry.event.start.formatted(date: .omitted, time: .shortened))
+                .font(.footnote.monospacedDigit())
+                .foregroundStyle(Theme.textSecondary)
+                .frame(minWidth: 44, alignment: .leading)
+            Text(entry.event.title.isEmpty ? "Calendar event" : entry.event.title)
+                .font(.subheadline.weight(entry.status == .notRecorded ? .regular : .semibold))
+                .foregroundStyle(entry.status == .notRecorded ? Theme.textSecondary : Color.primary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            status(entry.status)
+        }
+        .padding(.vertical, 9)
+        .contentShape(Rectangle())
+
+        switch entry.status {
+        case .recorded:
+            if let meeting = entry.meeting {
+                Button { onOpen(meeting) } label: { content }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the recording")
+            } else {
+                content
+            }
+        case .now:
+            Button { onRecord(entry.event) } label: { content }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Record \(entry.event.title), \(entry.event.timeRange)")
+        case .later, .notRecorded:
+            content
+        }
+    }
+
+    @ViewBuilder
+    private func status(_ status: DiaryStatus) -> some View {
+        switch status {
+        case .recorded:
+            Chip(text: "Recorded", systemImage: "checkmark", tint: Theme.success)
+        case .now:
+            HStack(spacing: 5) {
+                Circle().fill(.white).frame(width: 6, height: 6)
+                Text("Record")
+            }
+            .font(.caption.weight(.bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Theme.recordGradient, in: Capsule())
+        case .later:
+            Chip(text: "Later")
+        case .notRecorded:
+            Text("Not recorded")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .overlay(Capsule().strokeBorder(Theme.textTertiary, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+        }
     }
 }
 
@@ -455,7 +560,8 @@ struct MeetingCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(spacing: 8) {
+                KindBadge(meeting: meeting, size: 22)
                 Text(timeText)
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
@@ -486,7 +592,7 @@ struct MeetingCard: View {
                     Spacer(minLength: 0)
                     if meeting.openActionCount > 0 {
                         Chip(
-                            text: "\(meeting.openActionCount) action\(meeting.openActionCount == 1 ? "" : "s")",
+                            text: "\(meeting.openActionCount) \(meeting.kind == .voiceNote ? "to-do" : "action")\(meeting.openActionCount == 1 ? "" : "s")",
                             systemImage: "checklist",
                             tint: Theme.brand
                         )
