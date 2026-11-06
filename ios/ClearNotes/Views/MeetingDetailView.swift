@@ -256,15 +256,25 @@ struct MeetingDetailView: View {
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog("Delete this meeting?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete meeting", role: .destructive) {
+            Button("Move to Recently deleted") {
                 playback.unload()
                 meeting.moveToRecentlyDeleted()
                 DeletionUndo.shared.didDelete(meeting)
                 dismiss()
             }
+            Button("Delete permanently", role: .destructive) {
+                playback.unload()
+                dismiss()
+                // Once this page has closed, so nothing on it reads the deleted meeting.
+                let modelContext = context
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    RecentlyDeleted.deleteForGood(meeting, in: modelContext)
+                }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("It moves to Recently deleted, where you can restore it for 7 days. After that it's deleted for good, recording and all.")
+            Text(RecentlyDeleted.choiceMessage)
         }
     }
 
