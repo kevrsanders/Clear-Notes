@@ -20,6 +20,8 @@ enum SettingsKeys {
     static let customVocabulary = "customVocabulary"
     static let continueInBackground = "continueInBackground"
     static let appearance = "appearance"
+    /// Whether Today in your diary on the home screen is expanded (folded by default).
+    static let diaryExpanded = "diaryExpanded"
 }
 
 /// Light or dark: like the iPhone by default, or always one or the other.

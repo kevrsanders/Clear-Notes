@@ -10,6 +10,7 @@ struct MeetingsListView: View {
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @AppStorage(SettingsKeys.myName) private var myName = ""
     @AppStorage(SettingsKeys.useCalendar) private var useCalendar = false
+    @AppStorage(SettingsKeys.diaryExpanded) private var diaryExpanded = false
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var path: [Meeting] = []
@@ -43,20 +44,13 @@ struct MeetingsListView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
-                    if search.isEmpty, !diaryEntries.isEmpty {
-                        DiaryTodayCard(
-                            entries: diaryEntries,
-                            lastTime: diaryLastTime,
-                            onRecord: { newMeeting(for: $0, kind: .meeting) },
-                            onOpen: { path.append($0) },
-                            onShowLastTime: { lastTimeMeeting = $0 }
-                        )
-                    }
                     SearchField(text: $search)
                     if meetings.isEmpty {
+                        if search.isEmpty { diaryCard }
                         emptyState
                     } else if search.isEmpty {
                         stats
+                        diaryCard
                         filterBar
                         if sections.isEmpty {
                             Text("Nothing here yet. Tap Record and choose \(filter == .voiceNotes ? "Voice note" : filter == .catchUps ? "Quick catch-up" : "a diary meeting").")
@@ -235,6 +229,21 @@ struct MeetingsListView: View {
             StatTile(title: "All", value: "\(meetings.count)", hint: "\(time(meetings)) in total", tint: .primary)
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Today's diary, folded to one line (plus any meeting on now) unless the user expands it.
+    @ViewBuilder
+    private var diaryCard: some View {
+        if !diaryEntries.isEmpty {
+            DiaryTodayCard(
+                entries: diaryEntries,
+                isExpanded: $diaryExpanded,
+                lastTime: diaryLastTime,
+                onRecord: { newMeeting(for: $0, kind: .meeting) },
+                onOpen: { path.append($0) },
+                onShowLastTime: { lastTimeMeeting = $0 }
+            )
+        }
     }
 
     /// All · Diary · Catch-ups · Voice notes.
@@ -439,24 +448,72 @@ struct MeetingsListView: View {
 }
 
 /// Today's diary at a glance: each meeting with whether it was recorded, is on now (one tap to
-/// record), is later, or went by without a recording.
+/// record), is later, or went by without a recording. Folded, it's one line ("4 meetings · 1
+/// recorded") plus the meeting on now, if there is one, so recording it stays one tap.
 private struct DiaryTodayCard: View {
     let entries: [DiaryEntry]
+    @Binding var isExpanded: Bool
     /// The previous meeting in the series of the meeting on now or next, for "Last time".
     var lastTime: Meeting?
     var onRecord: (CalendarMeeting) -> Void
     var onOpen: (Meeting) -> Void
     var onShowLastTime: (Meeting) -> Void
 
+    private var hasMeetingOnNow: Bool { entries.contains { $0.status == .now } }
+
+    /// Every meeting when expanded; folded, only the one on now.
+    private var visible: [DiaryEntry] {
+        isExpanded ? entries : entries.filter { $0.status == .now }
+    }
+
+    /// "4 meetings · 1 recorded · next 14:30", or "· nothing left today".
+    private var summary: String {
+        let recorded = entries.filter { $0.status == .recorded }.count
+        var parts = ["\(entries.count) meeting\(entries.count == 1 ? "" : "s")", "\(recorded) recorded"]
+        if !entries.contains(where: { $0.status == .now || $0.status == .later }) {
+            parts.append("nothing left today")
+        } else if !isExpanded, !hasMeetingOnNow, let next = entries.first(where: { $0.status == .later }) {
+            parts.append("next " + next.event.start.formatted(date: .omitted, time: .shortened))
+        }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Eyebrow("Today in your diary")
-                .padding(.bottom, 6)
-            ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+            Button {
+                withAnimation(.snappy) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 12) {
+                    IconTile(systemName: "calendar", tint: Theme.brand, size: 30)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Today in your diary")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(summary)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.down")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(Theme.textTertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Today in your diary, \(summary)")
+            .accessibilityHint(isExpanded ? "Folds the list" : "Shows every meeting today")
+            if !visible.isEmpty {
+                Divider()
+                    .padding(.top, 10)
+            }
+            ForEach(Array(visible.enumerated()), id: \.element.id) { index, entry in
                 if index > 0 { Divider() }
                 row(entry)
             }
-            if let lastTime {
+            if let lastTime, isExpanded || hasMeetingOnNow {
                 Button {
                     onShowLastTime(lastTime)
                 } label: {
