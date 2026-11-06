@@ -12,7 +12,20 @@ struct ClearNotesApp: App {
     }
 }
 
+extension Notification.Name {
+    /// Posted by the Record tab; the Meetings screen starts a new recording.
+    static let startRecording = Notification.Name("ClearNotes.startRecording")
+}
+
 struct ContentView: View {
+    private static let recordTab = 2
+    /// Red, so Record stands out from the other tabs (tab icons are otherwise tinted alike).
+    private static let recordIcon: UIImage = {
+        let configuration = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+        let image = UIImage(systemName: "record.circle.fill", withConfiguration: configuration) ?? UIImage()
+        return image.withTintColor(UIColor(Theme.record), renderingMode: .alwaysOriginal)
+    }()
+
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = 0
@@ -22,10 +35,28 @@ struct ContentView: View {
 
     var body: some View {
         // Actions live inside each meeting, so there's no separate Actions tab.
-        TabView(selection: $tab) {
+        // Record sits in the middle of the tab bar. It isn't a real tab: choosing it starts a
+        // recording from the Meetings screen and leaves the current tab selected.
+        TabView(selection: Binding(get: { tab }, set: { choice in
+            if choice == Self.recordTab {
+                startRecording()
+            } else {
+                tab = choice
+            }
+        })) {
             MeetingsListView()
                 .tabItem { Label("Meetings", systemImage: "waveform") }
                 .tag(0)
+            Color.clear
+                .tabItem {
+                    Label {
+                        Text("Record")
+                    } icon: {
+                        Image(uiImage: Self.recordIcon)
+                    }
+                }
+                .tag(Self.recordTab)
+                .accessibilityHint("Starts recording a meeting")
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(1)
@@ -66,6 +97,14 @@ struct ContentView: View {
                 MinutesJobs.shared.resumePaused(in: context)
                 Task { await MeetingProcessor.resumeProcessing(in: context) }
             }
+        }
+    }
+
+    private func startRecording() {
+        tab = 0
+        // Once the Meetings screen is showing, so it can present the recorder.
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .startRecording, object: nil)
         }
     }
 }

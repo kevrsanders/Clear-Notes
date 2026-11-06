@@ -62,7 +62,7 @@ struct MeetingsListView: View {
                     }
                 }
                 .padding(.horizontal, Theme.gutter)
-                .padding(.bottom, 110)
+                .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.immediately)
             .background { GlowBackground() }
@@ -90,9 +90,10 @@ struct MeetingsListView: View {
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(32)
             }
-            .overlay(alignment: .bottom) {
-                RecordButton { newMeeting(for: nil) }
-                    .padding(.bottom, 12)
+            // Record lives in the tab bar now (see ContentView), which posts this.
+            .onReceive(NotificationCenter.default.publisher(for: .startRecording)) { _ in
+                path = []
+                newMeeting(for: nil)
             }
         }
         .task(id: useCalendar) {
