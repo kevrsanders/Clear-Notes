@@ -26,7 +26,7 @@ struct RecordingView: View {
     @State private var showLastTime = false
     /// How many people are in the meeting, if the user says. Optional: Auto works it out.
     @State private var peopleCount: Int?
-    @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
+    @Query(filter: #Predicate<Meeting> { $0.deletedAt == nil }, sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
     @FocusState private var notesFocused: Bool
 
     private var isRecording: Bool { recorder.state == .recording }

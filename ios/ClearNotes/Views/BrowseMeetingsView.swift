@@ -5,7 +5,7 @@ import UIKit
 /// Meetings by day: a month calendar with a dot on each day that has a recording (tap the month
 /// to jump to another month or year), and the chosen day's meetings below it.
 struct MeetingsCalendarView: View {
-    @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
+    @Query(filter: #Predicate<Meeting> { $0.deletedAt == nil }, sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
     @State private var selectedDay: DateComponents?
 
     private var calendar: Calendar { .current }
@@ -144,7 +144,7 @@ struct MeetingCalendar: UIViewRepresentable {
 /// newest first.
 struct SeriesListView: View {
     let meeting: Meeting
-    @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
+    @Query(filter: #Predicate<Meeting> { $0.deletedAt == nil }, sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
 
     private var series: [Meeting] { MeetingSeries.all(like: meeting, in: meetings) }
 

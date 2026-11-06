@@ -65,6 +65,7 @@ struct ContentView: View {
         .task {
             RecordingLiveActivity.endStale()
             MeetingSharing.clearSharedFiles()
+            RecentlyDeleted.purgeExpired(in: context)
             MinutesJobs.shared.resumePaused(in: context)
             await MeetingProcessor.resumeUnfinished(in: context)
         }

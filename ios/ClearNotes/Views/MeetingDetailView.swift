@@ -48,7 +48,7 @@ struct MeetingDetailView: View {
         var id: Self { self }
     }
     @AppStorage(SettingsKeys.myName) private var myName = ""
-    @Query(sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
+    @Query(filter: #Predicate<Meeting> { $0.deletedAt == nil }, sort: \Meeting.createdAt, order: .reverse) private var allMeetings: [Meeting]
 
     /// The last meeting in this meeting's series, for the Last time card.
     private var previousMeeting: Meeting? {
@@ -258,14 +258,13 @@ struct MeetingDetailView: View {
         .confirmationDialog("Delete this meeting?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete meeting", role: .destructive) {
                 playback.unload()
-                meeting.deleteAllAudio()
-                context.delete(meeting)
-                try? context.save()
+                meeting.moveToRecentlyDeleted()
+                DeletionUndo.shared.didDelete(meeting)
                 dismiss()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The recording, transcript, notes and actions will be deleted from this iPhone. This can't be undone.")
+            Text("It moves to Recently deleted, where you can restore it for 7 days. After that it's deleted for good, recording and all.")
         }
     }
 

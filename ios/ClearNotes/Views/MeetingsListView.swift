@@ -4,7 +4,7 @@ import SwiftUI
 /// Home: greeting, quick stats, meetings grouped by day and the floating Record button.
 struct MeetingsListView: View {
     @Environment(\.modelContext) private var context
-    @Query(sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
+    @Query(filter: #Predicate<Meeting> { $0.deletedAt == nil }, sort: \Meeting.createdAt, order: .reverse) private var meetings: [Meeting]
     @AppStorage(SettingsKeys.showConsentReminder) private var showConsentReminder = true
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @AppStorage(SettingsKeys.myName) private var myName = ""
@@ -19,6 +19,8 @@ struct MeetingsListView: View {
     @State private var showRecorder = false
     /// The meeting the user chose to delete from its card's menu, waiting for them to confirm.
     @State private var meetingToDelete: Meeting?
+    /// The meeting just deleted, for the Undo bar.
+    @State private var undo = DeletionUndo.shared
     @State private var finishedMeeting: Meeting?
     /// Today's calendar events, when Use my calendar is on.
     @State private var todaysEvents: [CalendarMeeting] = []
@@ -69,7 +71,7 @@ struct MeetingsListView: View {
             .scrollDismissesKeyboard(.immediately)
             .background { GlowBackground() }
             .toolbar(.hidden, for: .navigationBar)
-            // Deleting can't be undone, so the card's Delete always asks first.
+            // The card's Delete always asks first. The meeting goes to Recently deleted for a week.
             .confirmationDialog(
                 meetingToDelete.map { "Delete \"\($0.title)\"?" } ?? "Delete this meeting?",
                 isPresented: Binding(get: { meetingToDelete != nil }, set: { if !$0 { meetingToDelete = nil } }),
@@ -79,7 +81,24 @@ struct MeetingsListView: View {
                 Button("Delete meeting", role: .destructive) { delete(meeting) }
                 Button("Cancel", role: .cancel) {}
             } message: { _ in
-                Text("The recording, transcript, notes and actions will be deleted from this iPhone. This can't be undone.")
+                Text("It moves to Recently deleted, where you can restore it for 7 days. After that it's deleted for good, recording and all.")
+            }
+            .safeAreaInset(edge: .bottom) {
+                if undo.meeting != nil {
+                    UndoBar {
+                        withAnimation(.snappy) { undo.undo() }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            // Undo is offered for a few seconds after each delete, here or inside a meeting.
+            .task(id: undo.token) {
+                guard undo.meeting != nil else { return }
+                try? await Task.sleep(for: .seconds(6))
+                guard !Task.isCancelled else { return }
+                withAnimation(.snappy) { undo.dismiss() }
             }
             .navigationDestination(for: Meeting.self) { MeetingDetailView(meeting: $0) }
             .navigationDestination(isPresented: $showCalendar) { MeetingsCalendarView() }
@@ -222,9 +241,10 @@ struct MeetingsListView: View {
 
     private func delete(_ meeting: Meeting) {
         meetingToDelete = nil
-        meeting.deleteAllAudio()
-        context.delete(meeting)
-        try? context.save()
+        withAnimation(.snappy) {
+            meeting.moveToRecentlyDeleted()
+            undo.didDelete(meeting)
+        }
     }
 
     // MARK: - Data

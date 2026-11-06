@@ -77,6 +77,7 @@ struct SettingsView: View {
     @State private var transcriberError: String?
     @State private var calendarBlocked = CalendarReader.isBlocked
     @Query private var voices: [VoiceProfile]
+    @Query(filter: #Predicate<Meeting> { $0.deletedAt != nil }) private var deletedMeetings: [Meeting]
     @State private var isDownloading = false
     @State private var downloadError: String?
 
@@ -220,7 +221,7 @@ struct SettingsView: View {
                         toggle("Reduce echo and noise", systemImage: "waveform.badge.minus", isOn: $reduceEchoAndNoise)
                     }
 
-                    section("Recordings", footer: (AudioRetention(rawValue: audioRetention) ?? .default).promise + " Recordings are excluded from backups and never leave this iPhone.") {
+                    section("Recordings", footer: (AudioRetention(rawValue: audioRetention) ?? .default).promise + " Recordings are excluded from backups and never leave this iPhone. Deleted meetings stay in Recently deleted for 7 days, recording included, then are deleted for good.") {
                         Picker(selection: $audioRetention) {
                             ForEach(AudioRetention.allCases) { option in
                                 Text(option.title).tag(option.rawValue)
@@ -234,6 +235,22 @@ struct SettingsView: View {
                             }
                         }
                         .tint(Theme.brand)
+                        Divider()
+                        NavigationLink {
+                            RecentlyDeletedView()
+                        } label: {
+                            HStack {
+                                Label {
+                                    Text("Recently deleted")
+                                } icon: {
+                                    Image(systemName: "trash")
+                                        .foregroundStyle(Theme.brand)
+                                }
+                                Spacer()
+                                Text("\(deletedMeetings.count)")
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                        }
                     }
 
                     section("Speakers", footer: "Voices are separated on this iPhone after each meeting. The speaker models are downloaded once. No meeting data is sent. Remember voices (off by default) saves a voiceprint when you name someone, only with their agreement, so later meetings can suggest their name. Voiceprints are biometric data: check with your Information Governance team before using this with colleagues.") {

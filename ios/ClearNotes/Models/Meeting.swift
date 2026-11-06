@@ -135,6 +135,9 @@ final class Meeting {
     /// Who shared this meeting, when it was imported from a Clear Notes file.
     var sharedBy: String?
     var importedAt: Date?
+    /// When the user deleted it. It stays in Recently deleted for `RecentlyDeleted.keepFor`,
+    /// recording included, and is then deleted for good. Nil for meetings in use.
+    var deletedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []
@@ -178,6 +181,19 @@ final class Meeting {
 
     static func defaultTitle(for date: Date) -> String {
         "Meeting · " + date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
+    }
+
+    // MARK: - Recently deleted
+
+    /// Moves the meeting to Recently deleted, where it can be restored for a week.
+    func moveToRecentlyDeleted(at date: Date = .now) {
+        deletedAt = date
+        try? modelContext?.save()
+    }
+
+    func restoreFromRecentlyDeleted() {
+        deletedAt = nil
+        try? modelContext?.save()
     }
 
     // MARK: - Calendar
