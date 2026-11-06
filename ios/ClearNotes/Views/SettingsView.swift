@@ -19,6 +19,42 @@ enum SettingsKeys {
     static let accurateModelsReady = "accurateModelsReady"
     static let customVocabulary = "customVocabulary"
     static let continueInBackground = "continueInBackground"
+    static let appearance = "appearance"
+}
+
+/// Light or dark: like the iPhone by default, or always one or the other.
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: "Match iPhone"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    var interfaceStyle: UIUserInterfaceStyle {
+        switch self {
+        case .system: .unspecified
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    /// Applies to every window, sheets included. (SwiftUI's preferredColorScheme doesn't always
+    /// switch back to matching the iPhone until the app restarts.) The recording screen stays dark.
+    @MainActor
+    static func apply(_ rawValue: String) {
+        let style = (AppAppearance(rawValue: rawValue) ?? .system).interfaceStyle
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows {
+                window.overrideUserInterfaceStyle = style
+            }
+        }
+    }
 }
 
 struct SettingsView: View {
@@ -36,6 +72,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.accurateModelsReady) private var accurateModelsReady = false
     @AppStorage(SettingsKeys.customVocabulary) private var customVocabulary = ""
     @AppStorage(SettingsKeys.continueInBackground) private var continueInBackground = true
+    @AppStorage(SettingsKeys.appearance) private var appearance = AppAppearance.system.rawValue
     @State private var isDownloadingTranscriber = false
     @State private var transcriberError: String?
     @State private var calendarBlocked = CalendarReader.isBlocked
@@ -67,6 +104,16 @@ struct SettingsView: View {
                                 .textContentType(.name)
                                 .foregroundStyle(Theme.textSecondary)
                         }
+                    }
+
+                    section("Appearance", footer: "Match iPhone follows Light or Dark in iPhone Settings → Display & Brightness. The recording screen is always dark.") {
+                        Picker("Appearance", selection: $appearance) {
+                            ForEach(AppAppearance.allCases) { option in
+                                Text(option.title).tag(option.rawValue)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
                     }
 
                     section("Privacy", footer: "When on-device transcription is required, speech never leaves this iPhone. Turning it off lets Apple's servers transcribe languages this iPhone can't handle itself.") {

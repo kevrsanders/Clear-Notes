@@ -16,6 +16,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = 0
+    @AppStorage(SettingsKeys.appearance) private var appearance = AppAppearance.system.rawValue
     /// A shared meeting file someone opened in Clear Notes.
     @State private var importRequest: ImportRequest?
 
@@ -35,6 +36,9 @@ struct ContentView: View {
             MeetingSharing.clearSharedFiles()
             MinutesJobs.shared.resumePaused(in: context)
             await MeetingProcessor.resumeUnfinished(in: context)
+        }
+        .onChange(of: appearance, initial: true) { _, value in
+            AppAppearance.apply(value)
         }
         .onOpenURL { url in
             guard url.isFileURL else { return }
