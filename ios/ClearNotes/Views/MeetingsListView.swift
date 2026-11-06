@@ -17,6 +17,8 @@ struct MeetingsListView: View {
     @State private var showConsent = false
     @State private var startAfterConsent = false
     @State private var showRecorder = false
+    /// The meeting the user chose to delete from its card's menu, waiting for them to confirm.
+    @State private var meetingToDelete: Meeting?
     @State private var finishedMeeting: Meeting?
     /// Today's calendar events, when Use my calendar is on.
     @State private var todaysEvents: [CalendarMeeting] = []
@@ -67,6 +69,18 @@ struct MeetingsListView: View {
             .scrollDismissesKeyboard(.immediately)
             .background { GlowBackground() }
             .toolbar(.hidden, for: .navigationBar)
+            // Deleting can't be undone, so the card's Delete always asks first.
+            .confirmationDialog(
+                meetingToDelete.map { "Delete \"\($0.title)\"?" } ?? "Delete this meeting?",
+                isPresented: Binding(get: { meetingToDelete != nil }, set: { if !$0 { meetingToDelete = nil } }),
+                titleVisibility: .visible,
+                presenting: meetingToDelete
+            ) { meeting in
+                Button("Delete meeting", role: .destructive) { delete(meeting) }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("The recording, transcript, notes and actions will be deleted from this iPhone. This can't be undone.")
+            }
             .navigationDestination(for: Meeting.self) { MeetingDetailView(meeting: $0) }
             .navigationDestination(isPresented: $showCalendar) { MeetingsCalendarView() }
             // A meeting just imported from a shared file.
@@ -199,12 +213,18 @@ struct MeetingsListView: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button(role: .destructive) {
-                meeting.deleteAllAudio()
-                context.delete(meeting)
+                meetingToDelete = meeting
             } label: {
-                Label("Delete", systemImage: "trash")
+                Label("Delete…", systemImage: "trash")
             }
         }
+    }
+
+    private func delete(_ meeting: Meeting) {
+        meetingToDelete = nil
+        meeting.deleteAllAudio()
+        context.delete(meeting)
+        try? context.save()
     }
 
     // MARK: - Data

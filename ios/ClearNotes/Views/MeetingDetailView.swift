@@ -256,14 +256,16 @@ struct MeetingDetailView: View {
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog("Delete this meeting?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
+            Button("Delete meeting", role: .destructive) {
                 playback.unload()
                 meeting.deleteAllAudio()
                 context.delete(meeting)
+                try? context.save()
                 dismiss()
             }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The transcript, notes and actions will be deleted from this iPhone.")
+            Text("The recording, transcript, notes and actions will be deleted from this iPhone. This can't be undone.")
         }
     }
 
