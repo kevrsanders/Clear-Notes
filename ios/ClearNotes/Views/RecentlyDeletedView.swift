@@ -26,32 +26,25 @@ final class DeletionUndo {
     }
 }
 
-/// Delete, in a menu: opens in place with its two choices, each saying what it does.
+/// The two ways to delete a meeting, as items in a menu: straight in the menu rather than a
+/// submenu, which iOS stacks on top of the menu it opened from. Each says what it does.
 struct DeleteChoices: View {
-    var title = "Delete"
     var onMoveToRecentlyDeleted: () -> Void
     var onDeletePermanently: () -> Void
 
     var body: some View {
-        Menu {
+        Section {
+            // In a menu, a second Text is the item's subtitle and an Image its icon.
             Button(action: onMoveToRecentlyDeleted) {
-                Label {
-                    Text("Move to Recently deleted")
-                    Text("You can restore it for 7 days")
-                } icon: {
-                    Image(systemName: "trash")
-                }
+                Text("Move to Recently deleted")
+                Text("You can restore it for 7 days")
+                Image(systemName: "trash")
             }
             Button(role: .destructive, action: onDeletePermanently) {
-                Label {
-                    Text("Delete permanently")
-                    Text("Recording and all. Can't be undone")
-                } icon: {
-                    Image(systemName: "trash.slash")
-                }
+                Text("Delete permanently")
+                Text("Recording and all. Can't be undone")
+                Image(systemName: "trash.slash")
             }
-        } label: {
-            Label(title, systemImage: "trash")
         }
     }
 }
@@ -167,12 +160,9 @@ struct RecentlyDeletedView: View {
                     Button(role: .destructive) {
                         withAnimation(.snappy) { RecentlyDeleted.deleteForGood(meeting, in: context) }
                     } label: {
-                        Label {
-                            Text("Delete for good")
-                            Text("Recording and all. Can't be undone")
-                        } icon: {
-                            Image(systemName: "trash.slash")
-                        }
+                        Text("Delete for good")
+                        Text("Recording and all. Can't be undone")
+                        Image(systemName: "trash.slash")
                     }
                 } label: {
                     Text("Delete now")
