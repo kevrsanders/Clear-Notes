@@ -93,3 +93,34 @@ final class MeetingReminderTests: XCTestCase {
         XCTAssertEqual(shown.first?.eventTitle, "Weekly check-in")
     }
 }
+
+final class PhoneRemoteTests: XCTestCase {
+    private let start = Date(timeIntervalSince1970: 1_793_000_000)
+
+    func testTheWatchTimerCountsRecordingTimeOnly() {
+        var state = PhoneRecordingState(timerStart: start)
+        XCTAssertEqual(state.elapsed(at: start.addingTimeInterval(95)), 95)
+        state.pausedAt = start.addingTimeInterval(60)
+        XCTAssertEqual(state.elapsed(at: start.addingTimeInterval(500)), 60, "Stops while paused")
+        XCTAssertTrue(state.isPaused)
+    }
+
+    func testTheRecordingStateTravelsToTheWatch() {
+        let state = PhoneRecordingState(timerStart: start, pausedAt: nil, actionMarks: 2, decisionMarks: 1)
+        let context = PhoneRecordingState.context(state)
+        XCTAssertTrue(PhoneRecordingState.isContext(context))
+        XCTAssertEqual(PhoneRecordingState.from(context), state)
+        XCTAssertEqual(state.marksText, "2 actions · 1 decision marked")
+
+        let stopped = PhoneRecordingState.context(nil)
+        XCTAssertTrue(PhoneRecordingState.isContext(stopped), "Stopping is news too")
+        XCTAssertNil(PhoneRecordingState.from(stopped))
+        XCTAssertFalse(PhoneRecordingState.isContext(["other": 1]))
+    }
+
+    func testWatchCommandsMatchTheLockScreenButtons() {
+        for raw in [PhoneRemote.pause, PhoneRemote.resume, PhoneRemote.markAction, PhoneRemote.markDecision] {
+            XCTAssertNotNil(RecordingCommand(rawValue: raw), raw)
+        }
+    }
+}
