@@ -11,6 +11,9 @@ struct HomeView: View {
         Group {
             if recorder.isRecording {
                 RecordingScreen(recorder: recorder)
+            } else if let phone = sender.phoneRecording {
+                // The iPhone is recording: the watch is its remote.
+                PhoneRemoteScreen(state: phone, sender: sender)
             } else {
                 startScreen
             }
@@ -173,12 +176,86 @@ private struct RecordingScreen: View {
         }
     }
 
-    private func clock(_ time: TimeInterval) -> String {
-        let seconds = Int(time)
-        let hours = seconds / 3_600
-        let minutes = (seconds % 3_600) / 60
-        return hours > 0
-            ? String(format: "%d:%02d:%02d", hours, minutes, seconds % 60)
-            : String(format: "%02d:%02d", minutes, seconds % 60)
+}
+
+/// "04:12" or "1:04:12".
+private func clock(_ time: TimeInterval) -> String {
+    let seconds = Int(time)
+    let hours = seconds / 3_600
+    let minutes = (seconds % 3_600) / 60
+    return hours > 0
+        ? String(format: "%d:%02d:%02d", hours, minutes, seconds % 60)
+        : String(format: "%02d:%02d", minutes, seconds % 60)
+}
+
+/// While the iPhone records a meeting (it hears a room far better than a watch): its timer, Mark
+/// action and decision, and Pause or Resume. A tap on the wrist confirms each one.
+private struct PhoneRemoteScreen: View {
+    let state: PhoneRecordingState
+    let sender: WatchSender
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 6) {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(state.isPaused ? Color.gray : Color.red)
+                        .frame(width: 6, height: 6)
+                    Text(state.isPaused ? "Paused on iPhone" : "Recording on iPhone")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(state.isPaused ? Color.secondary : Color.red)
+                }
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(clock(state.elapsed(at: context.date)))
+                        .font(.system(size: 30, weight: .light).monospacedDigit())
+                }
+                if let confirmation = sender.confirmation {
+                    Label(confirmation, systemImage: "checkmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.green)
+                } else if let error = sender.remoteError {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                } else if let marks = state.marksText {
+                    Text(marks)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
+                    Button {
+                        sender.send(PhoneRemote.markAction, confirm: "Action marked")
+                    } label: {
+                        Label("Action", systemImage: "checkmark.circle")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .tint(.purple)
+                    Button {
+                        sender.send(PhoneRemote.markDecision, confirm: "Decision marked")
+                    } label: {
+                        Label("Decision", systemImage: "signpost.right")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .tint(.green)
+                }
+                .disabled(state.isPaused)
+                Button {
+                    if state.isPaused {
+                        sender.send(PhoneRemote.resume, confirm: "Recording again")
+                    } else {
+                        sender.send(PhoneRemote.pause, confirm: "Paused")
+                    }
+                } label: {
+                    Label(state.isPaused ? "Resume" : "Pause", systemImage: state.isPaused ? "play.fill" : "pause.fill")
+                        .font(.footnote.weight(.semibold))
+                }
+            }
+        }
+        // The confirmation shows for a moment, then the marks count comes back.
+        .task(id: sender.confirmation) {
+            guard sender.confirmation != nil else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            sender.clearConfirmation()
+        }
     }
 }

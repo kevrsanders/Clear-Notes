@@ -13,8 +13,12 @@ final class RecordingLiveActivity {
     private static var currentID: String?
 
     func start(elapsed: TimeInterval = 0) {
-        guard activity == nil, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard activity == nil else { return }
         let initial = State(timerStart: Date().addingTimeInterval(-elapsed))
+        state = initial
+        // Apple Watch shows it too, with Pause and Mark buttons, even with Live Activities off.
+        PhoneRecordingMirror.publish(initial)
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         do {
             let started = try Activity.request(
                 attributes: RecordingActivityAttributes(),
@@ -30,17 +34,20 @@ final class RecordingLiveActivity {
     }
 
     func update(_ change: (inout State) -> Void) {
-        guard let activity, var next = state else { return }
+        guard var next = state else { return }
         change(&next)
         state = next
+        PhoneRecordingMirror.publish(next)
+        guard let activity else { return }
         let content = ActivityContent(state: next, staleDate: nil)
         Task { await activity.update(content) }
     }
 
     func end() {
+        state = nil
+        PhoneRecordingMirror.publish(nil)
         guard let activity else { return }
         self.activity = nil
-        state = nil
         if Self.currentID == activity.id { Self.currentID = nil }
         Task { await activity.end(nil, dismissalPolicy: .immediate) }
     }

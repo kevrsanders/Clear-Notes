@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import WatchConnectivity
+import WatchKit
 
 /// Sends finished recordings to the iPhone. WatchConnectivity delivers them in the background
 /// when the iPhone is in reach; a recording is removed from the watch once it has arrived.
@@ -11,6 +12,11 @@ final class WatchSender {
 
     /// Recordings on the watch not yet on the iPhone.
     private(set) var waiting = 0
+    /// The recording the iPhone is making, if any, which the watch can pause and mark.
+    private(set) var phoneRecording: PhoneRecordingState?
+    /// Shown briefly after a tap on the remote, e.g. "Action marked".
+    private(set) var confirmation: String?
+    private(set) var remoteError: String?
 
     private let delegate = SessionDelegate()
 
@@ -57,11 +63,72 @@ final class WatchSender {
     func refresh() {
         waiting = WatchStore.waitingDetails().count
     }
+
+    // MARK: - Remote for the iPhone's recording
+
+    func receive(_ state: PhoneRecordingState?) {
+        phoneRecording = state
+        if state == nil {
+            confirmation = nil
+            remoteError = nil
+        }
+    }
+
+    /// Pause, Resume, Mark action or Mark decision on the iPhone's recording.
+    func send(_ command: String, confirm: String) {
+        guard WCSession.isSupported() else { return }
+        let session = WCSession.default
+        guard session.activationState == .activated, session.isReachable else {
+            remoteError = "Can't reach your iPhone"
+            WKInterfaceDevice.current().play(.failure)
+            return
+        }
+        remoteError = nil
+        session.sendMessage([PhoneRemote.commandKey: command], replyHandler: { reply in
+            let done = reply["ok"] as? Bool ?? false
+            Task { @MainActor in WatchSender.shared.commandFinished(done: done, confirm: confirm) }
+        }, errorHandler: { _ in
+            Task { @MainActor in WatchSender.shared.commandFinished(done: false, confirm: confirm) }
+        })
+    }
+
+    private func commandFinished(done: Bool, confirm: String) {
+        if done {
+            confirmation = confirm
+            WKInterfaceDevice.current().play(.success)
+        } else {
+            remoteError = "Your iPhone didn't respond"
+            WKInterfaceDevice.current().play(.failure)
+        }
+    }
+
+    func clearConfirmation() {
+        confirmation = nil
+    }
 }
 
 private final class SessionDelegate: NSObject, WCSessionDelegate {
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        Task { @MainActor in WatchSender.shared.sendWaiting() }
+        let context = session.receivedApplicationContext
+        let hasState = PhoneRecordingState.isContext(context)
+        let state = PhoneRecordingState.from(context)
+        Task { @MainActor in
+            if hasState { WatchSender.shared.receive(state) }
+            WatchSender.shared.sendWaiting()
+        }
+    }
+
+    /// The iPhone's recording started, changed or stopped.
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        guard PhoneRecordingState.isContext(applicationContext) else { return }
+        let state = PhoneRecordingState.from(applicationContext)
+        Task { @MainActor in WatchSender.shared.receive(state) }
+    }
+
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        guard PhoneRecordingState.isContext(message) else { return }
+        let state = PhoneRecordingState.from(message)
+        Task { @MainActor in WatchSender.shared.receive(state) }
     }
 
     func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {

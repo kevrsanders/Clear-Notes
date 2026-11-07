@@ -26,13 +26,65 @@ final class WatchLink: NSObject, WCSessionDelegate {
         }
     }
 
-    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
+    /// Once connected, the watch learns whether the iPhone is recording (clearing any recording
+    /// left showing from before Clear Notes was closed).
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        DispatchQueue.main.async { PhoneRecordingMirror.send() }
+    }
+
+    /// Pause, Resume and Mark from the watch, handled like the Lock Screen buttons.
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        guard let raw = message[PhoneRemote.commandKey] as? String,
+              let command = RecordingCommand(rawValue: raw)
+        else {
+            replyHandler(["ok": false])
+            return
+        }
+        DispatchQueue.main.async {
+            let isRecording = RecordingControls.handler != nil
+            if isRecording {
+                MainActor.assumeIsolated { RecordingControls.send(command) }
+            }
+            replyHandler(["ok": isRecording])
+        }
+    }
 
     func sessionDidBecomeInactive(_ session: WCSession) {}
 
     /// After switching to another watch, the session is activated again for the new one.
     func sessionDidDeactivate(_ session: WCSession) {
         WCSession.default.activate()
+    }
+}
+
+/// The iPhone's recording, mirrored to Apple Watch so the watch can pause it and mark moments.
+enum PhoneRecordingMirror {
+    /// The recording in progress, or nil. Only changed on the main thread.
+    private static var current: PhoneRecordingState?
+
+    static func publish(_ state: RecordingActivityAttributes.ContentState?) {
+        current = state.map {
+            PhoneRecordingState(
+                timerStart: $0.timerStart,
+                pausedAt: $0.pausedAt,
+                actionMarks: $0.actionMarks,
+                decisionMarks: $0.decisionMarks
+            )
+        }
+        send()
+    }
+
+    /// Sends the latest state: kept for the watch app to read when it opens, and straight away
+    /// if it's open now.
+    static func send() {
+        guard WCSession.isSupported() else { return }
+        let session = WCSession.default
+        guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
+        let context = PhoneRecordingState.context(current)
+        try? session.updateApplicationContext(context)
+        if session.isReachable {
+            session.sendMessage(context, replyHandler: nil, errorHandler: nil)
+        }
     }
 }
 
