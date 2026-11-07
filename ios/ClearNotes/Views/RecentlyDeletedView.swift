@@ -26,6 +26,36 @@ final class DeletionUndo {
     }
 }
 
+/// Delete, in a menu: opens in place with its two choices, each saying what it does.
+struct DeleteChoices: View {
+    var title = "Delete"
+    var onMoveToRecentlyDeleted: () -> Void
+    var onDeletePermanently: () -> Void
+
+    var body: some View {
+        Menu {
+            Button(action: onMoveToRecentlyDeleted) {
+                Label {
+                    Text("Move to Recently deleted")
+                    Text("You can restore it for 7 days")
+                } icon: {
+                    Image(systemName: "trash")
+                }
+            }
+            Button(role: .destructive, action: onDeletePermanently) {
+                Label {
+                    Text("Delete permanently")
+                    Text("Recording and all. Can't be undone")
+                } icon: {
+                    Image(systemName: "trash.slash")
+                }
+            }
+        } label: {
+            Label(title, systemImage: "trash")
+        }
+    }
+}
+
 /// "Moved to Recently deleted · Undo", shown for a few seconds after a delete.
 struct UndoBar: View {
     var onUndo: () -> Void
@@ -55,7 +85,6 @@ struct RecentlyDeletedView: View {
     @Environment(\.modelContext) private var context
     @Query(filter: #Predicate<Meeting> { $0.deletedAt != nil }) private var deleted: [Meeting]
     @State private var confirmEmpty = false
-    @State private var deletingForGood: Meeting?
 
     private var newestFirst: [Meeting] {
         deleted.sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
@@ -109,20 +138,6 @@ struct RecentlyDeletedView: View {
         } message: {
             Text("Recordings, transcripts, notes and actions are deleted from this iPhone. This can't be undone.")
         }
-        .confirmationDialog(
-            deletingForGood.map { "Delete \"\($0.title)\" for good?" } ?? "",
-            isPresented: Binding(get: { deletingForGood != nil }, set: { if !$0 { deletingForGood = nil } }),
-            titleVisibility: .visible,
-            presenting: deletingForGood
-        ) { meeting in
-            Button("Delete for good", role: .destructive) {
-                withAnimation(.snappy) { RecentlyDeleted.deleteForGood(meeting, in: context) }
-                deletingForGood = nil
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("The recording, transcript, notes and actions are deleted from this iPhone. This can't be undone.")
-        }
         .task { RecentlyDeleted.purgeExpired(in: context) }
     }
 
@@ -147,8 +162,18 @@ struct RecentlyDeletedView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
-                Button(role: .destructive) {
-                    deletingForGood = meeting
+                // Opens right here, on the button, rather than at the bottom of the screen.
+                Menu {
+                    Button(role: .destructive) {
+                        withAnimation(.snappy) { RecentlyDeleted.deleteForGood(meeting, in: context) }
+                    } label: {
+                        Label {
+                            Text("Delete for good")
+                            Text("Recording and all. Can't be undone")
+                        } icon: {
+                            Image(systemName: "trash.slash")
+                        }
+                    }
                 } label: {
                     Text("Delete now")
                         .foregroundStyle(.red)

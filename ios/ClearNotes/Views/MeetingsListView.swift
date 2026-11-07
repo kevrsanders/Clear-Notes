@@ -17,8 +17,6 @@ struct MeetingsListView: View {
     @State private var showConsent = false
     @State private var startAfterConsent = false
     @State private var showRecorder = false
-    /// The meeting the user chose to delete from its card's menu, waiting for them to confirm.
-    @State private var meetingToDelete: Meeting?
     /// The meeting just deleted, for the Undo bar.
     @State private var undo = DeletionUndo.shared
     @State private var finishedMeeting: Meeting?
@@ -71,19 +69,6 @@ struct MeetingsListView: View {
             .scrollDismissesKeyboard(.immediately)
             .background { GlowBackground() }
             .toolbar(.hidden, for: .navigationBar)
-            // The card's Delete always asks first: Recently deleted for a week, or gone for good now.
-            .confirmationDialog(
-                meetingToDelete.map { "Delete \"\($0.title)\"?" } ?? "Delete this meeting?",
-                isPresented: Binding(get: { meetingToDelete != nil }, set: { if !$0 { meetingToDelete = nil } }),
-                titleVisibility: .visible,
-                presenting: meetingToDelete
-            ) { meeting in
-                Button("Move to Recently deleted") { delete(meeting) }
-                Button("Delete permanently", role: .destructive) { deleteForGood(meeting) }
-                Button("Cancel", role: .cancel) {}
-            } message: { _ in
-                Text(RecentlyDeleted.choiceMessage)
-            }
             .safeAreaInset(edge: .bottom) {
                 if undo.meeting != nil {
                     UndoBar {
@@ -232,16 +217,16 @@ struct MeetingsListView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button(role: .destructive) {
-                meetingToDelete = meeting
-            } label: {
-                Label("Delete…", systemImage: "trash")
-            }
+            // Delete opens its two choices in place, in the same menu: Recently deleted for a
+            // week, or gone for good now.
+            DeleteChoices(
+                onMoveToRecentlyDeleted: { delete(meeting) },
+                onDeletePermanently: { deleteForGood(meeting) }
+            )
         }
     }
 
     private func delete(_ meeting: Meeting) {
-        meetingToDelete = nil
         withAnimation(.snappy) {
             meeting.moveToRecentlyDeleted()
             undo.didDelete(meeting)
@@ -249,7 +234,6 @@ struct MeetingsListView: View {
     }
 
     private func deleteForGood(_ meeting: Meeting) {
-        meetingToDelete = nil
         withAnimation(.snappy) {
             RecentlyDeleted.deleteForGood(meeting, in: context)
         }
