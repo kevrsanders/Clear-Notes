@@ -15,7 +15,6 @@ struct RecordingView: View {
     var onFinish: (RecordingResult, String, CalendarMeeting?) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(SettingsKeys.requireOnDevice) private var requireOnDevice = true
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
@@ -48,15 +47,6 @@ struct RecordingView: View {
     var body: some View {
         ZStack {
             Color.dynamic(light: 0xF4F4F8, dark: 0x07070B).ignoresSafeArea()
-            Circle()
-                .fill(Theme.recordGradient)
-                .frame(width: 420, height: 420)
-                .blur(radius: 120)
-                // Softer on a light background, where the same glow looks heavy.
-                .opacity((isRecording ? 0.30 + Double(level) * 0.35 : 0.12) * (colorScheme == .dark ? 1 : 0.6))
-                .offset(y: -180)
-                .ignoresSafeArea()
-                .animation(.easeOut(duration: 0.3), value: level)
 
             VStack(spacing: 18) {
                 header

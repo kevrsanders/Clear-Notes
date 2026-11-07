@@ -37,7 +37,7 @@ struct VocabularyView: View {
             .padding(.bottom, 32)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background { GlowBackground() }
+        .background { ScreenBackground() }
         .navigationTitle("My words")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

@@ -55,7 +55,7 @@ struct CalendarsView: View {
             .padding(.top, 8)
             .padding(.bottom, 32)
         }
-        .background { GlowBackground() }
+        .background { ScreenBackground() }
         .navigationTitle("Calendars")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)

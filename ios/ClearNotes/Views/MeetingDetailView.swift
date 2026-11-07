@@ -151,7 +151,7 @@ struct MeetingDetailView: View {
                 }
             }
         }
-        .background { GlowBackground() }
+        .background { ScreenBackground() }
         .safeAreaInset(edge: .bottom) {
             if selectingLines {
                 selectionBar

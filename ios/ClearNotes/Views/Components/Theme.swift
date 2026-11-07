@@ -111,8 +111,7 @@ private struct CardStyle: ViewModifier {
 }
 
 /// The app's colour, chosen in Settings → Appearance. It sets the accent (buttons, links,
-/// toggles, tabs), the brand gradient, the glow at the top of each screen, the user's avatar and
-/// the first speaker colour. Record stays red whichever is chosen.
+/// toggles, tabs), the brand gradient, the user's avatar and the first speaker colour. Record stays red whichever is chosen.
 enum AppAccent: String, CaseIterable, Identifiable {
     case teal, ocean, sage, amber, graphite
 
@@ -161,17 +160,6 @@ enum AppAccent: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The three soft glows behind the top of each screen.
-    var glow: [UInt32] {
-        switch self {
-        case .teal: [0x2EC4B6, 0x3A8DDE, 0xFFC48A]
-        case .ocean: [0x3B8BEB, 0x22B8CF, 0xFFC48A]
-        case .sage: [0x3FBF84, 0x9CCB5A, 0xFFC48A]
-        case .amber: [0xF5B642, 0xF0803C, 0x5AB8FF]
-        case .graphite: [0x8A8A99, 0x5C5C6B, 0xA3A3AF]
-        }
-    }
-
     var speakerColors: [UInt32] {
         let rest: [UInt32] = [0x14B8A6, 0xFB923C, 0xEC4899, 0x3B82F6, 0x84CC16, 0xEAB308, 0xEF4444, 0x8B5CF6]
         let first: UInt32 = switch self {
@@ -216,33 +204,11 @@ enum AppAccent: String, CaseIterable, Identifiable {
     }
 }
 
-/// Screen background: the base colour with soft colour glows across the top.
-struct GlowBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
+/// Screen background: the plain base colour, no glow.
+struct ScreenBackground: View {
     var body: some View {
-        let dark = colorScheme == .dark
-        let glow = AppAccent.current.glow
-        ZStack(alignment: .top) {
-            Theme.background
-            ZStack {
-                Circle()
-                    .fill(Color(hex: glow[0]).opacity(dark ? 0.22 : 0.28))
-                    .frame(width: 320, height: 320)
-                    .offset(x: -130, y: -80)
-                Circle()
-                    .fill(Color(hex: glow[1]).opacity(dark ? 0.16 : 0.22))
-                    .frame(width: 280, height: 280)
-                    .offset(x: 140, y: -110)
-                Circle()
-                    .fill(Color(hex: glow[2]).opacity(dark ? 0.10 : 0.20))
-                    .frame(width: 260, height: 260)
-                    .offset(x: 40, y: 40)
-            }
-            .blur(radius: 80)
-            .frame(height: 320)
-        }
-        .ignoresSafeArea()
-        .accessibilityHidden(true)
+        Theme.background
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
     }
 }

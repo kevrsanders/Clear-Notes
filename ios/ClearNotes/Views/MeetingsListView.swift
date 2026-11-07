@@ -78,7 +78,7 @@ struct MeetingsListView: View {
                 .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.immediately)
-            .background { GlowBackground() }
+            .background { ScreenBackground() }
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .bottom) {
                 if undo.meeting != nil {

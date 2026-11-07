@@ -32,7 +32,6 @@ final class AppAccentTests: XCTestCase {
         for accent in AppAccent.allCases {
             XCTAssertEqual(accent.speakerColors.count, 8, accent.title)
             XCTAssertEqual(Set(accent.speakerColors).count, 8, "\(accent.title) repeats a speaker colour")
-            XCTAssertEqual(accent.glow.count, 3, accent.title)
             XCTAssertEqual(accent.gradient.count, 2, accent.title)
         }
     }

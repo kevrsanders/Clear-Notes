@@ -2,7 +2,7 @@
 
 v1 looked like a stock iOS settings screen: grey grouped lists, hairline rows, segmented controls and a flat indigo. v2 aims for the polish of current note-taking apps (Granola, Otter, Fathom) and the iOS 26 visual language:
 
-- **Calm, bright surfaces** over a soft colour glow, not grey lists
+- **Calm, plain surfaces**: a flat background with solid cards, no glow or glass
 - **People first**: coloured speaker avatars appear on cards, in transcripts and on actions
 - **Bold typography** with clear hierarchy, plus small uppercase "eyebrow" labels
 - **Solid everywhere, no glass.** Controls (buttons, the search field, tabs, floating bars) use the card surface with a hairline outline (`panel(in:)`), and `UIDesignRequiresCompatibility` keeps iOS 26's system bars and menus solid too
@@ -27,7 +27,6 @@ v1 looked like a stock iOS settings screen: grey grouped lists, hairline rows, s
 | `recordGradient` | `#FF7A59 → #FF3D71` (135°) | same | Record button, live state |
 | `success` | `#22C55E` | `#30D158` | Done |
 | `warning` | `#F59E0B` | `#FFB020` | Due dates |
-| Glow blobs | violet `#8B7BFF` 28%, sky `#5AB8FF` 22%, peach `#FFB38A` 20% | 22% / 16% / 10% | Blurred (radius 80) behind the top of each screen |
 
 **Speaker palette** (used in order, both modes): violet `#7C5CFF`, teal `#14B8A6`, orange `#FB923C`, pink `#EC4899`, blue `#3B82F6`, lime `#84CC16`, amber `#EAB308`, red `#EF4444`.
 
@@ -54,7 +53,7 @@ v1 looked like a stock iOS settings screen: grey grouped lists, hairline rows, s
 
 | Component | Description |
 |---|---|
-| `GlowBackground` | `background` colour with three blurred colour blobs across the top ~300pt |
+| `ScreenBackground` | The plain `background` colour (the earlier colour glow was removed) |
 | `Eyebrow` | Uppercase label above a title or section |
 | `Card` | Content card; optional header row (icon in a 28pt tinted rounded square + headline + trailing accessory) |
 | `PillTabs` | Replaces segmented controls. A glass track (capsule) with a raised, sliding thumb (`matchedGeometryEffect`). Optional count badge per tab |

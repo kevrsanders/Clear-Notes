@@ -120,7 +120,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    section("Appearance", footer: "Match iPhone follows Light or Dark in iPhone Settings → Display & Brightness. The colour is used for buttons, highlights and the glow at the top of each screen, in light and dark. Record is always red. Applies everywhere in Clear Notes, including the recording screen.") {
+                    section("Appearance", footer: "Match iPhone follows Light or Dark in iPhone Settings → Display & Brightness. The colour is used for buttons and highlights, in light and dark. Record is always red. Applies everywhere in Clear Notes, including the recording screen.") {
                         Picker("Appearance", selection: $appearance) {
                             ForEach(AppAppearance.allCases) { option in
                                 Text(option.title).tag(option.rawValue)
@@ -328,7 +328,7 @@ struct SettingsView: View {
                 .padding(.bottom, 32)
             }
             .scrollDismissesKeyboard(.immediately)
-            .background { GlowBackground() }
+            .background { ScreenBackground() }
             .toolbar(.hidden, for: .navigationBar)
             .onAppear {
                 calendarBlocked = CalendarReader.isBlocked

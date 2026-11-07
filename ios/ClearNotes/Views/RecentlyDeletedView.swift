@@ -105,7 +105,7 @@ struct RecentlyDeletedView: View {
             .padding(.horizontal, Theme.gutter)
             .padding(.bottom, 40)
         }
-        .background { GlowBackground() }
+        .background { ScreenBackground() }
         .navigationTitle("Recently deleted")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

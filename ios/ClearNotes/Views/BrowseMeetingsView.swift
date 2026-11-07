@@ -54,7 +54,7 @@ struct MeetingsCalendarView: View {
             .padding(.horizontal, Theme.gutter)
             .padding(.bottom, 40)
         }
-        .background { GlowBackground() }
+        .background { ScreenBackground() }
         .navigationTitle("Calendar")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -177,7 +177,7 @@ struct SeriesListView: View {
             .padding(.horizontal, Theme.gutter)
             .padding(.bottom, 40)
         }
-        .background { GlowBackground() }
+        .background { ScreenBackground() }
         .navigationTitle(meeting.title)
         .navigationBarTitleDisplayMode(.inline)
     }
