@@ -160,7 +160,7 @@ struct RecordingView: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 40)
-            .glass(in: Capsule())
+            .panel(in: Capsule())
             Spacer()
             if identifySpeakers && SpeakerSeparators.isSupported && kind != .voiceNote {
                 peopleMenu
@@ -202,7 +202,7 @@ struct RecordingView: View {
             }
             .foregroundStyle(.primary)
             .frame(width: 40, height: 40)
-            .glass(in: Circle())
+            .panel(in: Circle())
         }
         .disabled(isFinishing)
         .accessibilityLabel("People in the meeting")
@@ -466,7 +466,7 @@ struct RecordingView: View {
             .foregroundStyle(.primary)
             .frame(maxWidth: .infinity)
             .frame(height: 48)
-            .glass(in: Capsule())
+            .panel(in: Capsule())
         }
         .buttonStyle(.plain)
         .disabled(!isRecording)
@@ -483,7 +483,7 @@ struct RecordingView: View {
                     .font(.title2)
                     .foregroundStyle(.primary)
                     .frame(width: 60, height: 60)
-                    .glass(in: Circle())
+                    .panel(in: Circle())
             }
             .buttonStyle(.plain)
             .disabled(!canControl)

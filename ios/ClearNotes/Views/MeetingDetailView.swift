@@ -1272,7 +1272,7 @@ struct MeetingDetailView: View {
             .padding(.leading, 6)
             .padding(.trailing, 14)
             .padding(.vertical, 6)
-            .glass(in: Capsule())
+            .panel(in: Capsule())
             .contentShape(Capsule())
             .onTapGesture { withAnimation(.snappy) { playerMode = .full } }
             .accessibilityAction(named: "Show player") { playerMode = .full }
@@ -1362,7 +1362,7 @@ struct MeetingDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .glass(in: Capsule())
+        .panel(in: Capsule())
     }
 
     /// One speaker's consecutive lines. Equatable on its data, so a turn only redraws when
@@ -1741,7 +1741,7 @@ private struct TopicRow: View {
     }
 }
 
-/// Floating glass player for the meeting's recording.
+/// Floating player for the meeting's recording.
 private struct PlayerBar: View {
     let playback: AudioPlayback
     let expiresAt: Date?
@@ -1805,7 +1805,7 @@ private struct PlayerBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .glass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .panel(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 }
 

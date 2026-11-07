@@ -5,8 +5,10 @@ import UIKit
 enum Theme {
     static let background = Color.dynamic(light: 0xF6F6FA, dark: 0x0A0A0F)
     static let surface = Color.dynamic(light: 0xFFFFFF, dark: 0x16161D)
-    /// Selected pill thumb: white in light mode, a translucent white in dark mode so it shows on glass.
+    /// Selected pill thumb: white in light mode, a translucent white in dark mode.
     static let surfaceRaised = Color.dynamic(light: 0xFFFFFF, dark: 0xFFFFFF, darkAlpha: 0.14)
+    /// The track the thumb slides in, a shade darker than the screen so the thumb stands out.
+    static let track = Color.dynamic(light: 0x0F0F1E, lightAlpha: 0.06, dark: 0xFFFFFF, darkAlpha: 0.06)
     static let stroke = Color.dynamic(light: 0x0F0F1E, lightAlpha: 0.06, dark: 0xFFFFFF, darkAlpha: 0.07)
     static let textSecondary = Color.dynamic(light: 0x6B6B78, dark: 0x9A9AA8)
     static let textTertiary = Color.dynamic(light: 0xA3A3AF, dark: 0x5C5C68)
@@ -85,20 +87,11 @@ extension View {
         modifier(CardStyle(padding: padding))
     }
 
-    /// Liquid Glass on iOS 26, translucent material on earlier versions. For floating controls.
-    @ViewBuilder
-    func glass<S: Shape>(in shape: S) -> some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            self.glassEffect(.regular, in: shape)
-        } else {
-            self.background(.ultraThinMaterial, in: shape)
-                .overlay(shape.stroke(Theme.stroke, lineWidth: 1))
-        }
-        #else
-        self.background(.ultraThinMaterial, in: shape)
-            .overlay(shape.stroke(Theme.stroke, lineWidth: 1))
-        #endif
+    /// A solid control surface: the card colour with a hairline outline, no glass or blur. For
+    /// buttons, the search field, tabs and floating bars.
+    func panel<S: InsettableShape>(in shape: S) -> some View {
+        self.background(Theme.surface, in: shape)
+            .overlay(shape.strokeBorder(Theme.stroke, lineWidth: 1))
     }
 }
 

@@ -67,7 +67,7 @@ struct UndoBar: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 50)
-        .glass(in: Capsule())
+        .panel(in: Capsule())
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
     }
 }

@@ -44,6 +44,8 @@ targets:
         NSSpeechRecognitionUsageDescription: Clear Notes turns speech into a written transcript on this iPhone.
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
+        # Solid controls rather than iOS 26's Liquid Glass, for the tab bar, toolbars and menus too.
+        UIDesignRequiresCompatibility: true
         # iOS 26: lets meeting processing carry on in the background (ContinuedProcessing.swift).
         BGTaskSchedulerPermittedIdentifiers:
           - $(PRODUCT_BUNDLE_IDENTIFIER).notes.*

@@ -135,7 +135,7 @@ struct SpeakerNamingSheet: View {
                         .onSubmit { save(name) }
                         .padding(.horizontal, 18)
                         .frame(height: 50)
-                        .glass(in: Capsule())
+                        .panel(in: Capsule())
                     Button("Save") { save(name) }
                         .buttonStyle(PrimaryButtonStyle())
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)

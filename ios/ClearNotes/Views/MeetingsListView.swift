@@ -649,7 +649,7 @@ private struct SearchField: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 46)
-        .glass(in: Capsule())
+        .panel(in: Capsule())
     }
 }
 

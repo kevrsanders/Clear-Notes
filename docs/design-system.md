@@ -5,7 +5,7 @@ v1 looked like a stock iOS settings screen: grey grouped lists, hairline rows, s
 - **Calm, bright surfaces** over a soft colour glow, not grey lists
 - **People first**: coloured speaker avatars appear on cards, in transcripts and on actions
 - **Bold typography** with clear hierarchy, plus small uppercase "eyebrow" labels
-- **Glass for controls, solid cards for content.** On iOS 26 floating controls use Liquid Glass (`glassEffect`); on iOS 17–18 they fall back to `.ultraThinMaterial`
+- **Solid everywhere, no glass.** Controls (buttons, the search field, tabs, floating bars) use the card surface with a hairline outline (`panel(in:)`), and `UIDesignRequiresCompatibility` keeps iOS 26's system bars and menus solid too
 - **One signature gradient** (violet → blue) for AI and brand moments, and one warm gradient (coral → pink) for recording
 
 ## Tokens

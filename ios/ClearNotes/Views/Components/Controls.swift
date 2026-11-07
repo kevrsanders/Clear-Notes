@@ -109,7 +109,7 @@ extension CardHeader where Accessory == EmptyView {
     }
 }
 
-/// A 40pt glass circle for close, back and more buttons.
+/// A 40pt solid circle for close, back and more buttons.
 struct GlassCircleButton: View {
     var systemName: String
     var accessibilityLabel: String
@@ -121,7 +121,7 @@ struct GlassCircleButton: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(width: 40, height: 40)
-                .glass(in: Circle())
+                .panel(in: Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
@@ -158,7 +158,7 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
-/// Replaces segmented controls: a glass track with a sliding raised thumb.
+/// Replaces segmented controls: a recessed track with a sliding raised thumb.
 struct PillTabs<Value: Hashable>: View {
     struct Item {
         var value: Value
@@ -216,7 +216,8 @@ struct PillTabs<Value: Hashable>: View {
             }
         }
         .padding(4)
-        .glass(in: Capsule())
+        .background(Theme.track, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 1))
     }
 }
 
