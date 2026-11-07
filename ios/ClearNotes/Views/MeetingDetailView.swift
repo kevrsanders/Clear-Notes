@@ -17,7 +17,6 @@ struct MeetingDetailView: View {
     @State private var newActionText = ""
     @State private var isRenaming = false
     @State private var draftTitle = ""
-    @State private var confirmDelete = false
     @State private var followUp: FollowUpKind?
     @State private var playback = AudioPlayback()
     @State private var confirmDeleteAudio = false
@@ -326,26 +325,24 @@ struct MeetingDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("Delete this meeting?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Move to Recently deleted") {
-                playback.unload()
-                meeting.moveToRecentlyDeleted()
-                DeletionUndo.shared.didDelete(meeting)
-                dismiss()
-            }
-            Button("Delete permanently", role: .destructive) {
-                playback.unload()
-                dismiss()
-                // Once this page has closed, so nothing on it reads the deleted meeting.
-                let modelContext = context
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(500))
-                    RecentlyDeleted.deleteForGood(meeting, in: modelContext)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(RecentlyDeleted.choiceMessage)
+    }
+
+    private func moveToRecentlyDeleted() {
+        playback.unload()
+        meeting.moveToRecentlyDeleted()
+        DeletionUndo.shared.didDelete(meeting)
+        dismiss()
+    }
+
+    private func deletePermanently() {
+        playback.unload()
+        dismiss()
+        // Once this page has closed, so nothing on it reads the deleted meeting.
+        let modelContext = context
+        let deleted = meeting
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            RecentlyDeleted.deleteForGood(deleted, in: modelContext)
         }
     }
 
@@ -535,11 +532,11 @@ struct MeetingDetailView: View {
                         Label("Delete recording", systemImage: "waveform.slash")
                     }
                 }
-                Button(role: .destructive) {
-                    confirmDelete = true
-                } label: {
-                    Label("Delete meeting", systemImage: "trash")
-                }
+                DeleteChoices(
+                    title: "Delete meeting",
+                    onMoveToRecentlyDeleted: moveToRecentlyDeleted,
+                    onDeletePermanently: deletePermanently
+                )
             } label: {
                 Image(systemName: "ellipsis")
             }

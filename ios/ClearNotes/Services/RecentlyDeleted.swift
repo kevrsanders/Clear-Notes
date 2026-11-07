@@ -6,9 +6,6 @@ import SwiftData
 enum RecentlyDeleted {
     static let keepFor: TimeInterval = 7 * 86_400
 
-    /// Shown when deleting a meeting, which offers both.
-    static let choiceMessage = "Recently deleted keeps it for 7 days, recording included, so you can restore it. Delete permanently removes it from this iPhone now and can't be undone."
-
     /// When a meeting deleted at `deletedAt` is deleted for good.
     static func expiry(of deletedAt: Date) -> Date {
         deletedAt.addingTimeInterval(keepFor)
