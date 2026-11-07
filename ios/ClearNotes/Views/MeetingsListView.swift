@@ -192,12 +192,12 @@ struct MeetingsListView: View {
                 if myName.isEmpty {
                     Image(systemName: "person.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onBrand)
                         .frame(width: 40, height: 40)
                         .background(Theme.brandGradient, in: Circle())
                         .accessibilityHidden(true)
                 } else {
-                    Avatar(name: myName, color: Theme.brand, size: 40)
+                    Avatar(name: myName, color: Theme.brand, size: 40, textColor: Theme.onBrand)
                 }
             }
         }

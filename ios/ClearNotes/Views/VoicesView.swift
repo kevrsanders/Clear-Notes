@@ -16,7 +16,7 @@ struct VoicesView: View {
                 }
                 ForEach(profiles) { profile in
                     HStack(spacing: 12) {
-                        Avatar(name: profile.name, color: Theme.brand, size: 36)
+                        Avatar(name: profile.name, color: Theme.brand, size: 36, textColor: Theme.onBrand)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(profile.name)
                                 .font(.body.weight(.medium))

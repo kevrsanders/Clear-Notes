@@ -73,7 +73,7 @@ struct IconTile: View {
         let shape = RoundedRectangle(cornerRadius: size * 0.32, style: .continuous)
         Image(systemName: systemName)
             .font(.system(size: size * 0.5, weight: .semibold))
-            .foregroundStyle(tint == nil ? Color.white : tint!)
+            .foregroundStyle(tint == nil ? Theme.onBrand : tint!)
             .frame(width: size, height: size)
             .background {
                 if let tint {
@@ -135,7 +135,7 @@ struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font((compact ? Font.subheadline : Font.body).weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.onBrand)
             .padding(.horizontal, compact ? 14 : 22)
             .padding(.vertical, compact ? 8 : 14)
             .background(Theme.brandGradient, in: Capsule())
@@ -187,7 +187,7 @@ struct PillTabs<Value: Hashable>: View {
                                 Text("\(item.badge)")
                                     .font(.system(size: 10, weight: .bold))
                                     .monospacedDigit()
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(Theme.onBrand)
                                     .padding(.horizontal, 4)
                                     .frame(minWidth: 16, minHeight: 16)
                                     .background(Theme.brand, in: Capsule())

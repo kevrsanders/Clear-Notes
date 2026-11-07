@@ -21,8 +21,9 @@ v1 looked like a stock iOS settings screen: grey grouped lists, hairline rows, s
 | `textPrimary` | `#0E0E14` | `#F4F4F8` | |
 | `textSecondary` | `#6B6B78` | `#9A9AA8` | |
 | `textTertiary` | `#A3A3AF` | `#5C5C68` | Placeholders, hints |
-| `brand` | `#6A5CFF` | `#8E83FF` | Accent / tint |
-| `brandGradient` | `#7C5CFF → #4F7BFF` (135°) | same | AI badges, primary buttons |
+| `brand` | from the chosen colour (`AppAccent`) | | Accent / tint. Teal by default: `#0F9C8C` light, `#3CCFBE` dark. Also Ocean, Sage, Amber, Graphite (Settings → Appearance) |
+| `brandGradient` | from the chosen colour, e.g. Teal `#14B8A6 → #2E8FD8` (135°) | same | AI badges, primary buttons |
+| `onBrand` | white, or near-black on Amber and dark Graphite | | Text and symbols on `brand` |
 | `recordGradient` | `#FF7A59 → #FF3D71` (135°) | same | Record button, live state |
 | `success` | `#22C55E` | `#30D158` | Done |
 | `warning` | `#F59E0B` | `#FFB020` | Due dates |

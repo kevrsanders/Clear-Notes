@@ -36,6 +36,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = 0
     @AppStorage(SettingsKeys.appearance) private var appearance = AppAppearance.system.rawValue
+    @AppStorage(SettingsKeys.accent) private var accent = AppAccent.teal.rawValue
     /// A shared meeting file someone opened in Clear Notes.
     @State private var importRequest: ImportRequest?
 
@@ -68,6 +69,8 @@ struct ContentView: View {
                 .tag(1)
         }
         .tint(Theme.brand)
+        // A new colour redraws every screen (the tab stays selected), as colours are read while drawing.
+        .id(accent)
         .task {
             RecordingLiveActivity.endStale()
             MeetingSharing.clearSharedFiles()
@@ -78,6 +81,9 @@ struct ContentView: View {
         }
         .onChange(of: appearance, initial: true) { _, value in
             AppAppearance.apply(value)
+        }
+        .onChange(of: accent, initial: true) { _, _ in
+            AppAccent.applyTint()
         }
         .onOpenURL { url in
             guard url.isFileURL else { return }

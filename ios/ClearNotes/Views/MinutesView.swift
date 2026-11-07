@@ -207,7 +207,7 @@ struct MinutesDocument: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .agreed(let text):
-            taggedRow(tag: "Agreed", tint: Theme.success, text: text)
+            taggedRow(tag: "Agreed", tint: Theme.decision, text: text)
         case .action(let text):
             taggedRow(tag: "Action", tint: Theme.brand, text: text)
         case .section(let text):

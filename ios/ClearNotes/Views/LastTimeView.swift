@@ -40,7 +40,7 @@ struct LastTimeView: View {
 
                 if !meeting.decisions.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        CardHeader(title: "Decisions", systemImage: "signpost.right.fill", tint: Theme.success)
+                        CardHeader(title: "Decisions", systemImage: "signpost.right.fill", tint: Theme.decision)
                         BulletList(text: meeting.decisions.map { "- \($0)" }.joined(separator: "\n"))
                     }
                     .cardStyle()

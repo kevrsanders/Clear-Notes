@@ -125,7 +125,7 @@ private struct RecordingScreen: View {
         switch recorder.kind {
         case .voiceNote: .orange
         case .catchUp: .cyan
-        case .meeting: .purple
+        case .meeting: .blue
         }
     }
 
@@ -159,7 +159,7 @@ private struct RecordingScreen: View {
                     Label(recorder.kind == .voiceNote ? "To-do" : "Action", systemImage: "checkmark.circle")
                         .font(.footnote.weight(.semibold))
                 }
-                .tint(.purple)
+                .tint(.teal)
                 Button {
                     recorder.stop()
                 } label: {
@@ -229,7 +229,7 @@ private struct PhoneRemoteScreen: View {
                         Label("Action", systemImage: "checkmark.circle")
                             .font(.footnote.weight(.semibold))
                     }
-                    .tint(.purple)
+                    .tint(.teal)
                     Button {
                         sender.send(PhoneRemote.markDecision, confirm: "Decision marked")
                     } label: {

@@ -788,7 +788,7 @@ struct MeetingDetailView: View {
                     Divider()
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(Array(meeting.decisions.enumerated()), id: \.offset) { _, decision in
-                            taggedRow("Agreed", tint: Theme.success, text: decision)
+                            taggedRow("Agreed", tint: Theme.decision, text: decision)
                         }
                         ForEach(summaryActions) { action in
                             Button {
@@ -980,14 +980,14 @@ struct MeetingDetailView: View {
             if !meeting.decisions.isEmpty {
                 Divider()
                 VStack(alignment: .leading, spacing: 14) {
-                    CardHeader(title: "Decisions", systemImage: "signpost.right.fill", tint: Theme.success)
+                    CardHeader(title: "Decisions", systemImage: "signpost.right.fill", tint: Theme.decision)
                     ForEach(Array(meeting.decisions.enumerated()), id: \.offset) { index, decision in
                         HStack(alignment: .top, spacing: 12) {
                             Text("\(index + 1)")
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 22, height: 22)
-                                .background(Theme.success, in: Circle())
+                                .background(Theme.decision, in: Circle())
                             Text(decision)
                                 .fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
@@ -1259,7 +1259,7 @@ struct MeetingDetailView: View {
                 Button(action: playback.togglePlayback) {
                     Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onBrand)
                         .frame(width: 34, height: 34)
                         .background(Theme.brandGradient, in: Circle())
                 }
@@ -1758,7 +1758,7 @@ private struct PlayerBar: View {
             Button(action: playback.togglePlayback) {
                 Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onBrand)
                     .frame(width: 44, height: 44)
                     .background(Theme.brandGradient, in: Circle())
             }

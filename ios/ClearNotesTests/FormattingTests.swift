@@ -26,3 +26,20 @@ final class FormattingTests: XCTestCase {
         XCTAssertNil(segments.segment(matching: nil))
     }
 }
+
+final class AppAccentTests: XCTestCase {
+    func testEveryColourHasEightDistinctSpeakerColours() {
+        for accent in AppAccent.allCases {
+            XCTAssertEqual(accent.speakerColors.count, 8, accent.title)
+            XCTAssertEqual(Set(accent.speakerColors).count, 8, "\(accent.title) repeats a speaker colour")
+            XCTAssertEqual(accent.glow.count, 3, accent.title)
+            XCTAssertEqual(accent.gradient.count, 2, accent.title)
+        }
+    }
+
+    func testTealIsTheDefaultAndOldValuesFallBack() {
+        XCTAssertEqual(AppAccent(rawValue: "teal"), .teal)
+        XCTAssertNil(AppAccent(rawValue: "violet"), "There's no violet any more; the default (teal) applies")
+        XCTAssertEqual(AppAccent.allCases.map(\.title), ["Teal", "Ocean", "Sage", "Amber", "Graphite"])
+    }
+}

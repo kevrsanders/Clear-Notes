@@ -44,7 +44,7 @@ struct ActionEditor: View {
                             owner = person
                         } label: {
                             HStack(spacing: 10) {
-                                Avatar(name: person, color: Theme.brand, size: 26)
+                                Avatar(name: person, color: Theme.brand, size: 26, textColor: Theme.onBrand)
                                 Text(person)
                                     .foregroundStyle(Color.primary)
                                 Spacer(minLength: 0)

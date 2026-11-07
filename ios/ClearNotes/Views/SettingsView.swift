@@ -20,6 +20,8 @@ enum SettingsKeys {
     static let customVocabulary = "customVocabulary"
     static let continueInBackground = "continueInBackground"
     static let appearance = "appearance"
+    /// The app's colour (`AppAccent`), teal by default.
+    static let accent = "accent"
     /// Whether Today in your diary on the home screen is expanded (folded by default).
     static let diaryExpanded = "diaryExpanded"
     /// A reminder as each diary meeting starts, with Record (off by default).
@@ -79,6 +81,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.customVocabulary) private var customVocabulary = ""
     @AppStorage(SettingsKeys.continueInBackground) private var continueInBackground = true
     @AppStorage(SettingsKeys.appearance) private var appearance = AppAppearance.system.rawValue
+    @AppStorage(SettingsKeys.accent) private var accent = AppAccent.teal.rawValue
     @AppStorage(SettingsKeys.meetingReminders) private var meetingReminders = false
     @AppStorage(SettingsKeys.reminderShowsTitle) private var reminderShowsTitle = false
     /// Notifications are turned off for Clear Notes in iOS Settings.
@@ -117,7 +120,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    section("Appearance", footer: "Match iPhone follows Light or Dark in iPhone Settings → Display & Brightness. Applies everywhere in Clear Notes, including the recording screen.") {
+                    section("Appearance", footer: "Match iPhone follows Light or Dark in iPhone Settings → Display & Brightness. The colour is used for buttons, highlights and the glow at the top of each screen, in light and dark. Record is always red. Applies everywhere in Clear Notes, including the recording screen.") {
                         Picker("Appearance", selection: $appearance) {
                             ForEach(AppAppearance.allCases) { option in
                                 Text(option.title).tag(option.rawValue)
@@ -125,6 +128,8 @@ struct SettingsView: View {
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
+                        Divider()
+                        colourPicker
                     }
 
                     section("Privacy", footer: "When on-device transcription is required, speech never leaves this iPhone. Turning it off lets Apple's servers transcribe languages this iPhone can't handle itself.") {
@@ -477,6 +482,38 @@ struct SettingsView: View {
                 }
             }
         )
+    }
+
+    /// The five colours as swatches, the chosen one ringed.
+    private var colourPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Colour")
+                .font(.subheadline.weight(.semibold))
+            HStack(spacing: 0) {
+                ForEach(AppAccent.allCases) { option in
+                    let chosen = accent == option.rawValue
+                    Button {
+                        withAnimation(.snappy) { accent = option.rawValue }
+                    } label: {
+                        VStack(spacing: 6) {
+                            Circle()
+                                .fill(LinearGradient(colors: option.gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .frame(width: 34, height: 34)
+                                .padding(4)
+                                .overlay(Circle().strokeBorder(chosen ? Color.primary : Color.clear, lineWidth: 2))
+                            Text(option.title)
+                                .font(.caption.weight(chosen ? .semibold : .regular))
+                                .foregroundStyle(chosen ? Color.primary : Theme.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(option.title)
+                    .accessibilityAddTraits(chosen ? .isSelected : [])
+                }
+            }
+        }
     }
 
     private func toggle(_ title: String, systemImage: String, isOn: Binding<Bool>) -> some View {

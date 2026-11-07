@@ -7,6 +7,8 @@ struct Avatar: View {
     var size: CGFloat = 32
     /// Shown when there is no name, e.g. the speaker number.
     var placeholder = "?"
+    /// The initials' colour: white on speaker colours, or the accent's text colour on the accent.
+    var textColor: Color = .white
 
     var body: some View {
         ZStack {
@@ -14,7 +16,7 @@ struct Avatar: View {
                 Circle().fill(color)
                 Text(initials)
                     .font(.system(size: size * 0.38, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(textColor)
             } else {
                 Circle().fill(color.opacity(0.14))
                 Circle().strokeBorder(color, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
