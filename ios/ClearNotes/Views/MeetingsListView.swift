@@ -217,8 +217,8 @@ struct MeetingsListView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            // Delete opens its two choices in place, in the same menu: Recently deleted for a
-            // week, or gone for good now.
+            // Both ways to delete, right in the menu: Recently deleted for a week, or gone for
+            // good now.
             DeleteChoices(
                 onMoveToRecentlyDeleted: { delete(meeting) },
                 onDeletePermanently: { deleteForGood(meeting) }

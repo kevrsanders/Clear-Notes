@@ -384,7 +384,6 @@ struct MeetingDetailView: View {
                     }
                 }
                 DeleteChoices(
-                    title: "Delete meeting",
                     onMoveToRecentlyDeleted: moveToRecentlyDeleted,
                     onDeletePermanently: deletePermanently
                 )
