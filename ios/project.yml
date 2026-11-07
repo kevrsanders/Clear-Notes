@@ -103,8 +103,6 @@ targets:
     sources:
       - Watch
       - path: Shared/WatchRecording.swift
-    dependencies:
-      - target: ClearNotesWatchComplication
     info:
       path: Watch/Info.plist
       properties:
@@ -130,27 +128,10 @@ targets:
         CODE_SIGN_STYLE: Automatic
         # Embedded in the iPhone app, not archived on its own.
         SKIP_INSTALL: YES
-  # The watch-face button that starts a recording.
-  ClearNotesWatchComplication:
-    type: app-extension
-    platform: watchOS
-    deploymentTarget: "10.0"
-    sources:
-      - WatchComplication
-    info:
-      path: WatchComplication/Info.plist
-      properties:
-        CFBundleDisplayName: Clear Notes
-        CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.widgetkit-extension
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.clearnotes.app.watchkitapp.Complication
-        CODE_SIGN_STYLE: Automatic
-        APPLICATION_EXTENSION_API_ONLY: YES
-        SKIP_INSTALL: YES
+  # The watch-face button (WatchComplication/) is left out for now: TestFlight uploads couldn't
+  # register its bundle ID automatically. To bring it back, register <your bundle ID>.watchkitapp.Complication
+  # at developer.apple.com, then restore the ClearNotesWatchComplication target and the Watch
+  # app's dependency on it (see git history).
   ClearNotesTests:
     type: bundle.unit-test
     platform: iOS
