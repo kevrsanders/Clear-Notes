@@ -34,6 +34,40 @@ enum MeetingProcessor {
             continued.finish(.waitingForUnlock)
         }
 
+        // A recording from Apple Watch arrives without a transcript, so it's transcribed from its
+        // audio first.
+        if meeting.transcribeFromAudio {
+            guard let fileName = meeting.pendingAudioFileName ?? meeting.audioFileName else {
+                meeting.transcribeFromAudio = false
+                meeting.processingError = "The recording from Apple Watch is missing, so it couldn't be transcribed."
+                meeting.processingState = .failed
+                meeting.processingStage = nil
+                try? meeting.modelContext?.save()
+                return
+            }
+            guard AppActivity.isUnlocked else { return waitForUnlock() }
+            if AppActivity.isActive {
+                continued.begin()
+            }
+            stage(.transcript)
+            switch await FileTranscriber.transcribe(RecordingStore.url(for: fileName)) {
+            case .transcribed(let segments, let improved):
+                meeting.segments = segments
+                meeting.transcriptImproved = improved
+                meeting.transcribeFromAudio = false
+                try? meeting.modelContext?.save()
+            case .locked:
+                return waitForUnlock()
+            case .failed(let message):
+                meeting.processingError = message
+                meeting.processingState = .failed
+                meeting.processingStage = nil
+                try? meeting.modelContext?.save()
+                continued.finish(.failed)
+                return
+            }
+        }
+
         // A second, more accurate transcription of a new recording, before speakers are found. At
         // most twice, so one that keeps failing or being interrupted isn't redone on every restart.
         let isNew = meeting.pendingAudioFileName != nil || meeting.insightsSource == nil
@@ -60,8 +94,11 @@ enum MeetingProcessor {
 
         if let fileName = meeting.pendingAudioFileName {
             guard AppActivity.isUnlocked else { return waitForUnlock() }
-            stage(.speakers)
-            guard await identifySpeakers(in: meeting, audioFileName: fileName, separator: separator) else {
+            // A voice note is just the user, so there are no voices to tell apart; the recording
+            // is only kept (or deleted) as the user chose.
+            let speakerSeparator = meeting.kind == .voiceNote ? nil : separator
+            if speakerSeparator != nil { stage(.speakers) }
+            guard await identifySpeakers(in: meeting, audioFileName: fileName, separator: speakerSeparator) else {
                 return waitForUnlock()
             }
         }

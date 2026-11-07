@@ -24,6 +24,8 @@ targets:
       - package: FluidAudio
       # The recording's Lock Screen and Dynamic Island controls.
       - target: ClearNotesLiveActivity
+      # Clear Notes on Apple Watch: records there, sends the audio here.
+      - target: ClearNotesWatch
     info:
       path: ClearNotes/Info.plist
       properties:
@@ -92,6 +94,63 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         APPLICATION_EXTENSION_API_ONLY: YES
+  # Apple Watch: records voice notes, catch-ups and diary meetings on the watch and sends them
+  # to the iPhone, which transcribes them and writes the notes.
+  ClearNotesWatch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - Watch
+      - path: Shared/WatchRecording.swift
+    dependencies:
+      - target: ClearNotesWatchComplication
+    info:
+      path: Watch/Info.plist
+      properties:
+        CFBundleDisplayName: Clear Notes
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        WKApplication: true
+        # The build workflow swaps com.clearnotes.app for your bundle ID here too.
+        WKCompanionAppBundleIdentifier: com.clearnotes.app
+        # Keeps recording when the wrist is lowered.
+        UIBackgroundModes:
+          - audio
+        NSMicrophoneUsageDescription: Clear Notes records voice notes and catch-ups on your watch. They go to your iPhone, which transcribes them there.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.clearnotes.watch
+            CFBundleURLSchemes:
+              - clearnotes-watch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.clearnotes.app.watchkitapp
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        # Embedded in the iPhone app, not archived on its own.
+        SKIP_INSTALL: YES
+  # The watch-face button that starts a recording.
+  ClearNotesWatchComplication:
+    type: app-extension
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - WatchComplication
+    info:
+      path: WatchComplication/Info.plist
+      properties:
+        CFBundleDisplayName: Clear Notes
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.clearnotes.app.watchkitapp.Complication
+        CODE_SIGN_STYLE: Automatic
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
   ClearNotesTests:
     type: bundle.unit-test
     platform: iOS

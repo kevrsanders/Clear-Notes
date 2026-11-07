@@ -11,6 +11,8 @@ struct MeetingsListView: View {
     @AppStorage(SettingsKeys.myName) private var myName = ""
     @AppStorage(SettingsKeys.useCalendar) private var useCalendar = false
     @AppStorage(SettingsKeys.diaryExpanded) private var diaryExpanded = false
+    @AppStorage(SettingsKeys.meetingReminders) private var meetingReminders = false
+    @AppStorage(SettingsKeys.reminderShowsTitle) private var reminderShowsTitle = false
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var path: [Meeting] = []
@@ -145,6 +147,14 @@ struct MeetingsListView: View {
                 try? await Task.sleep(for: .seconds(60))
             }
         }
+        // Reminders follow the settings straight away.
+        .onChange(of: meetingReminders) { _, _ in scheduleReminders() }
+        .onChange(of: reminderShowsTitle) { _, _ in scheduleReminders() }
+        // A meeting reminder was tapped: record that meeting.
+        .onReceive(NotificationCenter.default.publisher(for: .recordDiaryEvent)) { _ in
+            recordRemindedMeeting()
+        }
+        .onAppear { recordRemindedMeeting() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { refreshCalendar() }
         }
@@ -389,6 +399,31 @@ struct MeetingsListView: View {
 
     private func refreshCalendar() {
         todaysEvents = useCalendar ? CalendarReader.shared.meetingsToday() : []
+        scheduleReminders()
+    }
+
+    /// Reminders for today's and tomorrow's meetings, so tomorrow morning's come even if Clear
+    /// Notes isn't opened first.
+    private func scheduleReminders() {
+        var events = todaysEvents
+        if useCalendar, let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: .now) {
+            events += CalendarReader.shared.meetingsToday(around: tomorrow)
+        }
+        let recorded = Array(meetings)
+        Task { await MeetingReminders.update(events: useCalendar ? events : [], meetings: recorded) }
+    }
+
+    /// Opens the recorder for the diary meeting whose reminder was tapped.
+    private func recordRemindedMeeting() {
+        guard let eventID = ReminderHandler.pendingEventID else { return }
+        ReminderHandler.pendingEventID = nil
+        refreshCalendar()
+        path = []
+        if let event = todaysEvents.first(where: { $0.id == eventID }) {
+            newMeeting(for: event, kind: .meeting)
+        } else {
+            choosingRecording = true
+        }
     }
 
     // MARK: - Recording

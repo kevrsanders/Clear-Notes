@@ -360,6 +360,9 @@ struct MeetingDetailView: View {
                     Chip(text: meeting.kind == .catchUp ? "Catch-up" : meeting.kind.title, systemImage: meeting.kind.systemImage, tint: meeting.kind.tint)
                 }
                 Chip(text: meeting.duration.durationString, systemImage: "clock")
+                if meeting.recordedOnWatch {
+                    Chip(text: "Apple Watch", systemImage: "applewatch")
+                }
                 if !meeting.speakers.isEmpty, meeting.kind != .voiceNote {
                     Chip(text: "\(meeting.speakers.count) speaker\(meeting.speakers.count == 1 ? "" : "s")", systemImage: "person.2.fill")
                 }
@@ -1617,13 +1620,23 @@ private struct ProcessingCard: View {
                 ProgressView(value: progress)
                     .tint(Theme.brand)
                     .animation(.easeInOut, value: progress)
-                step("Transcribed", detail: "\(meeting.duration.durationString) · \(wordCount) words", state: .done)
-                if showsTranscriptStep {
+                if meeting.recordedOnWatch {
+                    // Recorded on Apple Watch: transcribed here from the audio.
+                    step("Recorded on Apple Watch", detail: meeting.duration.durationString, state: .done)
                     step(
-                        "Improving the transcript",
-                        detail: "A second, more accurate pass on this iPhone",
-                        state: stage == .transcript ? .active : .done
+                        "Transcribing the recording",
+                        detail: meeting.transcribeFromAudio ? "On this iPhone" : "\(wordCount) words, on this iPhone",
+                        state: meeting.transcribeFromAudio ? .active : .done
                     )
+                } else {
+                    step("Transcribed", detail: "\(meeting.duration.durationString) · \(wordCount) words", state: .done)
+                    if showsTranscriptStep {
+                        step(
+                            "Improving the transcript",
+                            detail: "A second, more accurate pass on this iPhone",
+                            state: stage == .transcript ? .active : .done
+                        )
+                    }
                 }
                 if showsSpeakerStep {
                     step("Identifying speakers", detail: "Separating voices on this iPhone", state: stage == .speakers ? .active : .done)

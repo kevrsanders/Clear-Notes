@@ -22,6 +22,10 @@ enum SettingsKeys {
     static let appearance = "appearance"
     /// Whether Today in your diary on the home screen is expanded (folded by default).
     static let diaryExpanded = "diaryExpanded"
+    /// A reminder as each diary meeting starts, with Record (off by default).
+    static let meetingReminders = "meetingReminders"
+    /// Whether those reminders name the meeting (off by default: the Lock Screen and watch are visible to others).
+    static let reminderShowsTitle = "reminderShowsTitle"
 }
 
 /// Light or dark: like the iPhone by default, or always one or the other.
@@ -75,6 +79,10 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.customVocabulary) private var customVocabulary = ""
     @AppStorage(SettingsKeys.continueInBackground) private var continueInBackground = true
     @AppStorage(SettingsKeys.appearance) private var appearance = AppAppearance.system.rawValue
+    @AppStorage(SettingsKeys.meetingReminders) private var meetingReminders = false
+    @AppStorage(SettingsKeys.reminderShowsTitle) private var reminderShowsTitle = false
+    /// Notifications are turned off for Clear Notes in iOS Settings.
+    @State private var remindersBlocked = false
     @State private var isDownloadingTranscriber = false
     @State private var transcriberError: String?
     @State private var calendarBlocked = CalendarReader.isBlocked
@@ -186,7 +194,7 @@ struct SettingsView: View {
                         .tint(Theme.brand)
                     }
 
-                    section("Calendar", footer: "Reads today's events from your main calendar, and from any others you turn on in Choose calendars. Colleagues' shared calendars stay off unless you turn them on. Meetings with other people invited come before blocks like WFH or Focus time. Recordings take the meeting's title, invited people are suggested when naming speakers and action owners, and the Teams link is kept for later. Only the title, invited names and Teams link are saved with each meeting. Nothing is sent anywhere.") {
+                    section("Calendar", footer: "Reads today's events from your main calendar, and from any others you turn on in Choose calendars. Colleagues' shared calendars stay off unless you turn them on. Meetings with other people invited come before blocks like WFH or Focus time. Recordings take the meeting's title, invited people are suggested when naming speakers and action owners, and the Teams link is kept for later. Only the title, invited names and Teams link are saved with each meeting. Nothing is sent anywhere. Remind me when a meeting starts: a notification as each meeting with other people begins, with Record. With Apple Watch, Record starts recording on the watch. The name is left out unless you choose to show it, since anyone who can see your Lock Screen or watch can read it.") {
                         Toggle(isOn: calendarToggle) {
                             Label {
                                 Text("Use my calendar")
@@ -202,6 +210,16 @@ struct SettingsView: View {
                                 CalendarsView()
                             } label: {
                                 Text("Choose calendars")
+                            }
+                            Divider()
+                            toggle("Remind me when a meeting starts", systemImage: "bell.badge", isOn: remindersToggle)
+                            if meetingReminders {
+                                toggle("Show the meeting's name", systemImage: "text.bubble", isOn: $reminderShowsTitle)
+                            }
+                            if remindersBlocked {
+                                Text("Notifications are off for Clear Notes. Turn them on in iOS Settings → Notifications.")
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.warning)
                             }
                         }
                         if calendarBlocked {
@@ -441,6 +459,24 @@ struct SettingsView: View {
                     .padding(.horizontal, 4)
             }
         }
+    }
+
+    /// Turning reminders on asks to show notifications first.
+    private var remindersToggle: Binding<Bool> {
+        Binding(
+            get: { meetingReminders },
+            set: { on in
+                guard on else {
+                    meetingReminders = false
+                    return
+                }
+                Task {
+                    let allowed = await MeetingReminders.requestPermission()
+                    meetingReminders = allowed
+                    remindersBlocked = !allowed
+                }
+            }
+        )
     }
 
     private func toggle(_ title: String, systemImage: String, isOn: Binding<Bool>) -> some View {

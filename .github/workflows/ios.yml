@@ -41,6 +41,12 @@ jobs:
           XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
           if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE"; fi
           xcodebuild -version
+          # The Apple Watch app needs the watchOS platform. Runner images usually have it; if
+          # not, it's downloaded once for this run.
+          if ! xcrun simctl list runtimes | grep -q watchOS; then
+            echo "watchOS platform missing; downloading it"
+            xcodebuild -downloadPlatform watchOS
+          fi
 
       - name: Generate the Xcode project
         run: |
@@ -124,11 +130,18 @@ jobs:
           XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
           if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE"; fi
           xcodebuild -version
+          # The Apple Watch app needs the watchOS platform. Runner images usually have it; if
+          # not, it's downloaded once for this run.
+          if ! xcrun simctl list runtimes | grep -q watchOS; then
+            echo "watchOS platform missing; downloading it"
+            xcodebuild -downloadPlatform watchOS
+          fi
 
       - name: Generate the Xcode project with your bundle ID
         run: |
           brew install xcodegen
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER: com.clearnotes.app/PRODUCT_BUNDLE_IDENTIFIER: $BUNDLE_ID/" project.yml
+          sed -i '' "s/WKCompanionAppBundleIdentifier: com.clearnotes.app/WKCompanionAppBundleIdentifier: $BUNDLE_ID/" project.yml
           xcodegen generate
 
       - name: Write the App Store Connect key

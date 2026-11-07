@@ -4,6 +4,12 @@ import UIKit
 
 @main
 struct ClearNotesApp: App {
+    init() {
+        // Recordings from Apple Watch, and taps on meeting reminders, can arrive at any time.
+        WatchLink.shared.activate()
+        ReminderHandler.shared.register()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -66,6 +72,7 @@ struct ContentView: View {
             RecordingLiveActivity.endStale()
             MeetingSharing.clearSharedFiles()
             RecentlyDeleted.purgeExpired(in: context)
+            WatchInbox.importAll(into: context)
             MinutesJobs.shared.resumePaused(in: context)
             await MeetingProcessor.resumeUnfinished(in: context)
         }
@@ -88,6 +95,14 @@ struct ContentView: View {
         }
         // The recording can only be read while the iPhone is unlocked, so processing that was
         // waiting carries on as soon as it is.
+        // A recording from Apple Watch arrived: it becomes a meeting and is transcribed here.
+        .onReceive(NotificationCenter.default.publisher(for: .watchRecordingArrived)) { _ in
+            WatchInbox.importAll(into: context)
+        }
+        // A meeting reminder was tapped: the Meetings screen opens the recorder.
+        .onReceive(NotificationCenter.default.publisher(for: .recordDiaryEvent)) { _ in
+            tab = 0
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
             Task { await MeetingProcessor.resumeProcessing(in: context) }
         }
@@ -95,6 +110,7 @@ struct ContentView: View {
             // Notes and minutes paused in the background (Apple Intelligence limits background
             // apps) carry on from where they stopped.
             if phase == .active {
+                WatchInbox.importAll(into: context)
                 MinutesJobs.shared.resumePaused(in: context)
                 Task { await MeetingProcessor.resumeProcessing(in: context) }
             }

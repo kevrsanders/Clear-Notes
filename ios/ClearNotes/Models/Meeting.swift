@@ -165,6 +165,10 @@ final class Meeting {
     /// The diary event this was recorded for (`CalendarMeeting.id`), so today's diary can show it
     /// as recorded.
     var calendarEventID: String?
+    /// Recorded on Apple Watch. Its audio arrives without a transcript, so it's transcribed first.
+    var recordedOnWatch: Bool = false
+    /// The transcript still has to be made from the audio (a recording from Apple Watch).
+    var transcribeFromAudio: Bool = false
     /// When the user deleted it. It stays in Recently deleted for `RecentlyDeleted.keepFor`,
     /// recording included, and is then deleted for good. Nil for meetings in use.
     var deletedAt: Date?

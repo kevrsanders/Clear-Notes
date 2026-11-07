@@ -23,7 +23,7 @@ This is the app's permanent, unique ID, in reverse-domain style, e.g. `com.yourn
 - Capabilities: none needed
 - **Continue → Register**
 
-The app also contains a Lock Screen extension (the recording timer and buttons) with the ID `<your bundle ID>.LiveActivity`. The upload registers it for you with the Admin API key from step 4. You only need to register it by hand, like this step, if an upload fails with a signing error that names it.
+The app also contains a Lock Screen extension (the recording timer and buttons) with the ID `<your bundle ID>.LiveActivity`, an Apple Watch app (`<your bundle ID>.watchkitapp`) and its watch-face button (`<your bundle ID>.watchkitapp.Complication`). The upload registers them for you with the Admin API key from step 4. You only need to register one by hand, like this step, if an upload fails with a signing error that names it.
 
 ### 3. Create the app in App Store Connect
 [appstoreconnect.apple.com](https://appstoreconnect.apple.com) → **Apps** → **+** → **New App**:
