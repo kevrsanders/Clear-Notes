@@ -296,8 +296,8 @@ struct MeetingDetailView: View {
             .presentationDetents([.medium])
             .presentationCornerRadius(32)
         }
-        .confirmationDialog("Delete the recording?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
-            Button("Delete recording", role: .destructive) {
+        .confirmationDialog("Remove the audio?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
+            Button("Remove the audio", role: .destructive) {
                 playback.unload()
                 meeting.deleteAudio()
             }
@@ -527,14 +527,17 @@ struct MeetingDetailView: View {
                     }
                     .disabled(meeting.processingState == .processing)
                 }
-                Divider()
+                // Not a way to delete the meeting, so it sits with the other actions, not in red.
                 if meeting.audioFileName != nil {
-                    Button(role: .destructive) {
+                    Button {
                         confirmDeleteAudio = true
                     } label: {
-                        Label("Delete recording", systemImage: "waveform.slash")
+                        Text("Remove the audio")
+                        Text("Keeps the transcript and notes")
+                        Image(systemName: "waveform.slash")
                     }
                 }
+                Divider()
                 DeleteChoices(
                     onMoveToRecentlyDeleted: moveToRecentlyDeleted,
                     onDeletePermanently: deletePermanently
