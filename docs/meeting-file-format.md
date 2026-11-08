@@ -83,9 +83,10 @@ A reader checks the size and hash against the pieces it received, so a damaged o
 | `summary` | string | "- " bullet lines. |
 | `topics` | [{`title`, `start`, `end`, `points`}] | |
 | `decisions` | [string] | |
-| `actions` | [{`text`, `owner`?, `due`?, `status`, `sourceLineID`?, `context`?}] | `status` is `suggested`, `open`, `done` or `dismissed`. Dismissed actions aren't shared. `sourceLineID` is a transcript line's `id`. `context` (from 0.3) is a short line of detail, e.g. who it's for; older files leave it out. |
+| `actions` | [{`text`, `owner`?, `due`?, `status`, `sourceLineID`?, `context`?}] | `status` is `suggested`, `open`, `done` or `dismissed`. Dismissed actions aren't shared. `sourceLineID` is a transcript line's `id`. `context` (from 0.3) is a short line of detail, e.g. who it's for; older files leave it out. `number` (from 0.3) is the action's number in the meeting (3 in WCI-3). |
 | `minutes` | string? | Plain-text minutes (numbered items, `Agreed:` and `Action:` lines). |
 | `kind` | string? | What was recorded: `meeting`, `catchUp` (a quick catch-up; `invited` holds who it was with) or `voiceNote`. Missing means `meeting`. |
+| `actionPrefix` | string? | The start of the meeting's action references ("WCI" in WCI-3), so a copy shows the same references. From 0.3. |
 | `privateNotes` | string? | Only when the sender chose to include them. |
 | `notesCaveat` | string? | Why some notes are basic, if they are. |
 | `notesSource` | string? | What wrote the notes, e.g. Apple Intelligence. |

@@ -71,7 +71,7 @@ enum MeetingSharing {
                     SharedMeeting.Action(
                         text: $0.text, owner: $0.owner, due: $0.due,
                         status: $0.status.rawValue, sourceLineID: $0.sourceSegmentID,
-                        context: $0.context
+                        context: $0.context, number: $0.number
                     )
                 },
             minutes: meeting.minutes.isEmpty ? nil : meeting.minutes,
@@ -79,7 +79,8 @@ enum MeetingSharing {
             notesCaveat: meeting.notesCaveat,
             notesSource: meeting.insightsSource,
             recording: recordingBytes.map { SharedMeeting.Recording(byteCount: $0, fileExtension: "caf") },
-            kind: meeting.kind.rawValue
+            kind: meeting.kind.rawValue,
+            actionPrefix: meeting.actions.contains(where: { $0.number != nil }) ? meeting.referencePrefix : nil
         )
     }
 
@@ -120,7 +121,7 @@ enum MeetingSharing {
         let actions = meeting.actions.filter { $0.status == .open || $0.status == .done }
         if !actions.isEmpty {
             lines += ["Actions"] + actions.map { action -> String in
-                var line = "• \(action.text)"
+                var line = "• " + (action.reference.map { "\($0) " } ?? "") + action.text
                 let details = [action.owner, action.due].compactMap { $0 }
                 if !details.isEmpty { line += " — " + details.joined(separator: ", ") }
                 if let context = action.context { line += ". \(context)" }
@@ -210,7 +211,7 @@ enum MeetingSharing {
             context.delete(old)
         }
         let actions = shared.actions.map { action in
-            ActionItem(
+            let item = ActionItem(
                 text: action.text,
                 owner: action.owner,
                 due: action.due,
@@ -218,9 +219,14 @@ enum MeetingSharing {
                 status: ActionStatus(rawValue: action.status) ?? .open,
                 sourceSegmentID: action.sourceLineID
             )
+            item.number = action.number
+            return item
         }
         actions.forEach { context.insert($0) }
         meeting.actions = actions
+        // The same references as the sender's copy; numbers for any it didn't have.
+        meeting.actionPrefix = shared.actionPrefix ?? meeting.actionPrefix
+        meeting.numberActions()
 
         if let recording {
             keepRecording(recording, for: meeting)

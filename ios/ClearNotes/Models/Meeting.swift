@@ -172,6 +172,11 @@ final class Meeting {
     /// When the user deleted it. It stays in Recently deleted for `RecentlyDeleted.keepFor`,
     /// recording included, and is then deleted for good. Nil for meetings in use.
     var deletedAt: Date?
+    /// The start of this meeting's action references ("WCI" in WCI-3). Set from the title when
+    /// the first action is numbered, and kept, so references don't change if it's renamed.
+    var actionPrefix: String?
+    /// The highest action number given, so a deleted action's number isn't given again.
+    var lastActionNumber: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \ActionItem.meeting)
     var actions: [ActionItem] = []
@@ -459,11 +464,33 @@ final class Meeting {
     }
 
     /// Turns a decision into an open action, for one that was really a task.
+    // MARK: - Action references
+
+    /// The prefix this meeting's action references use.
+    var referencePrefix: String { actionPrefix ?? ActionReference.prefix(for: self) }
+
+    /// Numbers every accepted or done action that hasn't got one yet, in the order they were
+    /// added, after the highest number used so far. Numbers never change and aren't reused.
+    func numberActions() {
+        let unnumbered = actions
+            .filter { $0.number == nil && ($0.status == .open || $0.status == .done) }
+            .sorted { $0.createdAt < $1.createdAt }
+        guard !unnumbered.isEmpty else { return }
+        if actionPrefix == nil { actionPrefix = ActionReference.prefix(for: self) }
+        var next = max(lastActionNumber, actions.compactMap(\.number).max() ?? 0) + 1
+        for action in unnumbered {
+            action.number = next
+            next += 1
+        }
+        lastActionNumber = next - 1
+    }
+
     func makeAction(fromDecisionAt index: Int) {
         guard decisions.indices.contains(index) else { return }
         let action = ActionItem(text: decisions[index], status: .open)
         modelContext?.insert(action)
         actions.append(action)
+        numberActions()
         var remaining = decisions
         remaining.remove(at: index)
         decisions = remaining

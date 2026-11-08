@@ -218,10 +218,13 @@ struct MinutesDocument: View {
                 .padding(.top, 12)
         case .summaryAction(let number, let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
+                // Wide enough for a reference such as "WCI-12".
                 Text(number)
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(Theme.brand)
-                    .frame(width: 30, alignment: .leading)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .frame(minWidth: 30, alignment: .leading)
                 Text(text)
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)

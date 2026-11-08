@@ -165,6 +165,7 @@ Below the document:
 - `GlowBackground`, Display title "Actions", subtitle "7 open across 4 meetings"
 - `PillTabs`: To review (count) · Open (count) · Done
 - Action cards as in the meeting detail, plus a footer row with a meeting chip (waveform icon + meeting title)
+- An accepted action's reference (e.g. "WCI-3", caption monospaced semibold, secondary) sits above its text, and a grey context line below it
 
 ### 6. Settings
 - Header card: app icon, "Clear Notes", "Private by design: everything stays on this iPhone"

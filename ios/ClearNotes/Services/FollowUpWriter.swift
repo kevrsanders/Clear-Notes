@@ -40,6 +40,11 @@ struct MeetingSnapshot: Sendable {
         var owner: String?
         var due: String?
         var isDone: Bool
+        /// "WCI-3", when it has one.
+        var reference: String? = nil
+
+        /// "WCI-3 Send the rota", or just the text.
+        var labelled: String { reference.map { "\($0) \(text)" } ?? text }
     }
 
     var title: String
@@ -64,7 +69,7 @@ extension MeetingSnapshot {
             actions: meeting.actions
                 .filter { $0.status == .open || $0.status == .done }
                 .sorted { $0.createdAt < $1.createdAt }
-                .map { Action(text: $0.text, owner: $0.owner, due: $0.due, isDone: $0.status == .done) },
+                .map { Action(text: $0.text, owner: $0.owner, due: $0.due, isDone: $0.status == .done, reference: $0.reference) },
             people: meeting.speakers.compactMap(\.name)
         )
     }
@@ -111,7 +116,7 @@ enum FollowUpWriter {
             lines.append("No open actions.")
         } else {
             lines += open.map { action in
-                var line = "☐ \(action.text)"
+                var line = "☐ \(action.labelled)"
                 let details = [action.owner, action.due].compactMap { $0 }
                 if !details.isEmpty { line += " — \(details.joined(separator: ", "))" }
                 return line
@@ -119,7 +124,7 @@ enum FollowUpWriter {
         }
         let done = meeting.actions.filter(\.isDone)
         if !done.isEmpty {
-            lines += ["", "Done:"] + done.map { "☑ \($0.text)" }
+            lines += ["", "Done:"] + done.map { "☑ \($0.labelled)" }
         }
         return lines.joined(separator: "\n")
     }
@@ -144,7 +149,8 @@ enum FollowUpWriter {
             lines += ["", "Next steps"] + open.map { action in
                 let owner = action.owner.map { "\($0): " } ?? ""
                 let due = action.due.map { " (\($0.lowercased()))" } ?? ""
-                return "• \(owner)\(action.text)\(due)"
+                let reference = action.reference.map { "\($0) " } ?? ""
+                return "• \(reference)\(owner)\(action.text)\(due)"
             }
         }
         lines += ["", "Let me know if I've missed anything.", "", "Best wishes"]
@@ -165,14 +171,14 @@ enum FollowUpWriter {
             let byOwner = Dictionary(grouping: open) { $0.owner ?? "Unassigned" }
             for owner in byOwner.keys.sorted(by: { ($0 == "Unassigned" ? "~" : $0) < ($1 == "Unassigned" ? "~" : $1) }) {
                 lines.append(owner)
-                lines += (byOwner[owner] ?? []).map { "  • \($0.text)" }
+                lines += (byOwner[owner] ?? []).map { "  • \($0.labelled)" }
             }
             lines.append("")
         }
 
         let dated = open.filter { $0.due != nil }
         if !dated.isEmpty {
-            lines += ["Timeline"] + dated.map { "• \($0.due ?? ""): \($0.text)" } + [""]
+            lines += ["Timeline"] + dated.map { "• \($0.due ?? ""): \($0.labelled)" } + [""]
         }
         if !meeting.topics.isEmpty {
             lines += ["Areas discussed"] + meeting.topics.map { "• \($0.title)" } + [""]

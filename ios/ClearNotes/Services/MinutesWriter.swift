@@ -37,6 +37,8 @@ enum MinutesWriter {
         var due: String?
         var isDone: Bool
         var time: TimeInterval?
+        /// "WCI-3", when it has one.
+        var reference: String? = nil
     }
 
     struct Input: Sendable {
@@ -176,21 +178,21 @@ enum MinutesWriter {
                 lines.append("\(number).\(pointIndex + 1) \(sentence(point))")
             }
             lines += (decisionsByItem[index] ?? []).map { "Agreed: \(sentence($0))" }
-            lines += (actionsByItem[index] ?? []).map { "Action: \(actionText($0))" }
+            lines += (actionsByItem[index] ?? []).map { "Action: \(actionText($0))\(referenceSuffix($0))" }
             lines.append("")
         }
 
         if !otherDecisions.isEmpty || !otherActions.isEmpty {
             lines.append("\(items.count + 1). \(items.isEmpty ? "Decisions and actions" : "Other decisions and actions")")
             lines += otherDecisions.map { "Agreed: \(sentence($0))" }
-            lines += otherActions.map { "Action: \(actionText($0))" }
+            lines += otherActions.map { "Action: \(actionText($0))\(referenceSuffix($0))" }
             lines.append("")
         }
 
         if !input.actions.isEmpty {
             lines.append("Summary of actions")
             for (index, action) in input.actions.enumerated() {
-                lines.append("A\(index + 1). \(actionText(action))\(action.isDone ? " (done)" : "")")
+                lines.append("\(action.reference ?? "A\(index + 1)"). \(actionText(action))\(action.isDone ? " (done)" : "")")
             }
         }
         return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -232,6 +234,11 @@ enum MinutesWriter {
         if parts.count == 1 { return 0 }
         guard let time, !parts.isEmpty else { return nil }
         return parts.lastIndex { $0.start <= time } ?? 0
+    }
+
+    /// " (WCI-3)" after an action in the body of the minutes, when it has a reference.
+    static func referenceSuffix(_ action: Action) -> String {
+        action.reference.map { " (\($0))" } ?? ""
     }
 
     /// "Share the new rota — Priya Sharma, by Friday"
@@ -356,7 +363,8 @@ extension MinutesWriter.Input {
                         owner: action.owner,
                         due: action.due,
                         isDone: action.status == .done,
-                        time: action.sourceSegmentID.flatMap { startTimes[$0] }
+                        time: action.sourceSegmentID.flatMap { startTimes[$0] },
+                        reference: action.reference
                     )
                 },
             speakers: meeting.speakers
@@ -539,7 +547,8 @@ enum MinutesFormat {
             if line.hasPrefix("Minutes of ") { return .subtitle(line) }
             if let match = capture(#"^(\d+\.\d+)\s+(.+)$"#, in: line) { return .point(number: match.0, text: match.1) }
             if let match = capture(#"^(\d+)\.\s+(.+)$"#, in: line) { return .heading(number: match.0, text: match.1) }
-            if let match = capture(#"^(A\d+)\.\s+(.+)$"#, in: line) { return .summaryAction(number: match.0, text: match.1) }
+            // "A1." or a reference such as "WCI-3."
+            if let match = capture(#"^(A\d+|[A-Z]{1,4}-\d+)\.\s+(.+)$"#, in: line) { return .summaryAction(number: match.0, text: match.1) }
             if let rest = after("Agreed:", in: line) { return .agreed(rest) }
             if let rest = after("Action:", in: line) { return .action(rest) }
             if line.caseInsensitiveCompare("Summary of actions") == .orderedSame { return .section(line) }

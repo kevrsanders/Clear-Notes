@@ -47,6 +47,8 @@ struct SharedMeeting: Codable, Equatable, Sendable {
         var sourceLineID: UUID?
         /// A short line of detail, e.g. who it's for. Added in 0.3; older files don't have it.
         var context: String?
+        /// Its number in the meeting (3 in WCI-3). Added in 0.3.
+        var number: Int?
     }
 
     struct Recording: Codable, Equatable, Sendable {
@@ -79,6 +81,9 @@ struct SharedMeeting: Codable, Equatable, Sendable {
     var recording: Recording?
     /// What was recorded: "meeting", "catchUp" or "voiceNote". Missing (older files) means a meeting.
     var kind: String? = nil
+    /// The start of the meeting's action references ("WCI" in WCI-3), so a copy keeps the same
+    /// references. Added in 0.3.
+    var actionPrefix: String? = nil
 }
 
 enum MeetingFileError: LocalizedError, Equatable {

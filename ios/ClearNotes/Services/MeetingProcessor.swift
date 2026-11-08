@@ -458,6 +458,7 @@ enum MeetingProcessor {
         }
         (markedActions + suggestions).forEach { meeting.modelContext?.insert($0) }
         meeting.actions = reviewed + markedActions + suggestions
+        meeting.numberActions()
     }
 
     /// The transcript line a mark was made at. A spoken mark takes its line's ID.

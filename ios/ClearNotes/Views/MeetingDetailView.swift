@@ -953,7 +953,7 @@ struct MeetingDetailView: View {
                             Button {
                                 editingAction = action
                             } label: {
-                                taggedRow(action.status == .suggested ? "Suggested" : "Action", tint: Theme.brand, text: actionLine(action))
+                                taggedRow(action.status == .suggested ? "Suggested" : (action.reference ?? "Action"), tint: Theme.brand, text: actionLine(action))
                             }
                             .buttonStyle(.plain)
                             .accessibilityHint("Edit, assign or accept it")
@@ -1044,6 +1044,11 @@ struct MeetingDetailView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(isDone ? "Done. Mark as not done" : "Mark as done")
             VStack(alignment: .leading, spacing: 2) {
+                if let reference = action.reference {
+                    Text(reference)
+                        .font(.caption2.monospaced().weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                }
                 Text(action.text)
                     .strikethrough(isDone)
                     .foregroundStyle(isDone ? Theme.textSecondary : Color.primary)
@@ -1307,6 +1312,7 @@ struct MeetingDetailView: View {
         let action = ActionItem(text: text, status: .open)
         context.insert(action)
         meeting.actions.append(action)
+        meeting.numberActions()
         newActionText = ""
     }
 

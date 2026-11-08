@@ -40,7 +40,7 @@ enum MarkdownExporter {
         if !actions.isEmpty {
             lines += ["## Actions", ""]
             lines += actions.map { action in
-                var line = "- [\(action.status == .done ? "x" : " ")] \(action.text)"
+                var line = "- [\(action.status == .done ? "x" : " ")] " + (action.reference.map { "\($0) " } ?? "") + action.text
                 let details = [action.owner, action.due].compactMap { $0 }
                 if !details.isEmpty { line += " (\(details.joined(separator: ", ")))" }
                 if let context = action.context { line += " — \(context)" }

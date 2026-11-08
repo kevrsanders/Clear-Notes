@@ -25,6 +25,12 @@ struct ActionCard: View {
             HStack(alignment: .top, spacing: 12) {
                 leading
                 VStack(alignment: .leading, spacing: 8) {
+                    if let reference = action.reference {
+                        Text(reference)
+                            .font(.caption.monospaced().weight(.semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                            .accessibilityLabel("Action \(reference)")
+                    }
                     Text(action.text)
                         .font(action.status == .done ? .body : .body.weight(.medium))
                         .strikethrough(action.status == .done)
