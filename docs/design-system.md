@@ -49,6 +49,18 @@ v1 looked like a stock iOS settings screen: grey grouped lists, hairline rows, s
 - Screen gutter **20**, stack spacing **12** (inside cards) / **16** (between cards)
 - Card: `surface` fill, 1px `stroke`; light mode adds shadow `0 8 24 rgba(30,30,60,.06)`
 
+## App icon
+
+**Highlight**: three lines of notes with the middle one highlighted, like tapping Mark during a recording. Flat, no text, no gradient.
+
+| Appearance | Colours |
+|---|---|
+| Light (default) | paper #FBF8F1, ink #2B2B33, highlight #F5B642 |
+| Dark | background #111115, ink #F2F2F5, highlight #B9770E |
+| Tinted | background #111115, ink #FFFFFF, highlight #5C5C63 (greyscale; iOS applies the tint) |
+
+The iPhone icon has all three appearances; the Apple Watch uses the light one (watchOS crops it to a circle). The SVG sources are in `docs/app-icon/`. Each PNG is 1024 × 1024, square and opaque; iOS applies the rounded mask.
+
 ## Components
 
 | Component | Description |
