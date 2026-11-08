@@ -61,7 +61,7 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
   - **Managed work apps** (e.g. NHSmail's Outlook under Intune) may refuse the file.
 - **One-tap follow-ups**: *List actions*, *Write follow-up email* and *Draft project plan*. Drafts are built only from the meeting's own notes and accepted actions. On iPhones with Apple Intelligence they're rewritten into natural prose on the device, with an instruction to keep every fact. They're editable, with Copy and Share.
 - **Talk time**: each speaker's share of the conversation, as percentages and a coloured bar.
-- **Action review**: AI suggestions arrive as *To review*, and you accept or dismiss each one. Every action links back to the transcript line it came from (**Source**).
+- **Action review**: AI suggestions arrive as *To review*, and you accept or dismiss each one. Every action links back to the transcript line it came from (**Source**). In the transcript, **Back to WCI-3** (or **Back to Topics**, after tapping a topic) returns to where you were, scrolled to that action or topic.
 - **Actions stay with their meeting**: each meeting card shows how many actions are open or waiting for review, and they're reviewed and ticked off inside the meeting (or on a later meeting's Last time card). There's no separate Actions tab. The home screen counts meetings today, this week and in total.
 - **Search** across titles, summaries, notes and transcripts.
 - **Share or copy** a meeting as Markdown (summary, decisions, actions, notes and transcript).

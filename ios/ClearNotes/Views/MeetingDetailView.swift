@@ -67,6 +67,19 @@ struct MeetingDetailView: View {
     @State private var decisionMenu: HeldDecision?
     @State private var lineMenu: TranscriptSegment?
 
+    /// Where "Back" goes after jumping to the transcript from an action's source or a topic.
+    @State private var returnPoint: ReturnPoint?
+    /// What to scroll back to once the tab has switched back.
+    @State private var returnScroll: AnyHashable?
+
+    private struct ReturnPoint {
+        var pane: Pane
+        /// The action's or topic's ID, to scroll back to.
+        var target: AnyHashable
+        /// "WCI-3", "the action" or "Topics".
+        var label: String
+    }
+
     /// A decision held down, by its place in the list.
     private struct HeldDecision: Identifiable {
         let index: Int
@@ -169,28 +182,18 @@ struct MeetingDetailView: View {
                     withAnimation { proxy.scrollTo(id, anchor: .center) }
                 }
             }
+            .onChange(of: returnScroll) { _, target in
+                guard let target else { return }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    withAnimation { proxy.scrollTo(target, anchor: .center) }
+                    returnScroll = nil
+                }
+            }
         }
         .background { ScreenBackground() }
         .safeAreaInset(edge: .bottom) {
-            if selectingLines {
-                selectionBar
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 6)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if playback.isLoaded, playerMode == .full {
-                PlayerBar(playback: playback, expiresAt: meeting.audioExpiresAt) {
-                    playback.pause()
-                    withAnimation(.snappy) { playerMode = .hidden }
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 6)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if playback.isLoaded, playerMode == .mini {
-                miniPlayer
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
-                    .transition(.scale(scale: 0.8, anchor: .bottomTrailing).combined(with: .opacity))
-            }
+            bottomBars
         }
         // Playing brings up the full player. A few seconds after pausing (or after the last
         // scrub while paused) it tucks itself away into the small pill.
@@ -224,7 +227,11 @@ struct MeetingDetailView: View {
             ActionEditor(action: action, people: (action.meeting ?? meeting).assignablePeople(myName: myName))
                 .presentationDetents([.large])
         }
-        .onChange(of: pane) { _, _ in endSelecting() }
+        .onChange(of: pane) { _, newPane in
+            endSelecting()
+            // Moving away from the transcript (other than with Back) forgets where it came from.
+            if newPane != .transcript { returnPoint = nil }
+        }
         // A different type has different tabs, so start again from the first.
         .onChange(of: meeting.kindRaw) { _, _ in
             showMinutes = false
@@ -417,6 +424,57 @@ struct MeetingDetailView: View {
             }
             .accessibilityLabel("More")
         }
+    }
+
+    /// What sits at the bottom of the screen: "Back to WCI-3" after jumping to the transcript, then
+    /// the line-selection bar or the player.
+    @ViewBuilder
+    private var bottomBars: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if pane == .transcript, !selectingLines, let returnPoint {
+                Button {
+                    goBack(to: returnPoint)
+                } label: {
+                    Label("Back to \(returnPoint.label)", systemImage: "arrow.uturn.backward")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.brand)
+                        .padding(.horizontal, 16)
+                        .frame(height: 40)
+                        .panel(in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.bottom, playback.isLoaded && playerMode != .hidden ? 0 : 6)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            if selectingLines {
+                selectionBar
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if playback.isLoaded, playerMode == .full {
+                PlayerBar(playback: playback, expiresAt: meeting.audioExpiresAt) {
+                    playback.pause()
+                    withAnimation(.snappy) { playerMode = .hidden }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if playback.isLoaded, playerMode == .mini {
+                miniPlayer
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+                    .transition(.scale(scale: 0.8, anchor: .bottomTrailing).combined(with: .opacity))
+            }
+        }
+    }
+
+    /// Back to where the jump to the transcript came from, scrolled to that action or topic.
+    private func goBack(to point: ReturnPoint) {
+        returnPoint = nil
+        withAnimation(.snappy) { pane = point.pane }
+        returnScroll = point.target
     }
 
     // MARK: - Menus
@@ -1126,6 +1184,7 @@ struct MeetingDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Opens the transcript at this point")
+                        .id(topic.id)
                     }
                 }
             }
@@ -1236,6 +1295,7 @@ struct MeetingDetailView: View {
     /// Opens the transcript at the first line of a topic.
     private func jump(to topic: Topic) {
         guard let segment = meeting.segments.first(where: { $0.end > topic.start }) else { return }
+        returnPoint = ReturnPoint(pane: pane, target: AnyHashable(topic.id), label: "Topics")
         withAnimation(.snappy) { pane = .transcript }
         highlightedSegment = segment.id
     }
@@ -1293,6 +1353,7 @@ struct MeetingDetailView: View {
                     onMakeDecision: { meeting.makeDecision(from: action) },
                     onEdit: { editingAction = action }
                 )
+                .id(action.persistentModelID)
             }
         }
     }
@@ -1301,6 +1362,7 @@ struct MeetingDetailView: View {
     private func sourceHandler(for action: ActionItem) -> (() -> Void)? {
         guard let id = action.sourceSegmentID else { return nil }
         return {
+            returnPoint = ReturnPoint(pane: pane, target: AnyHashable(action.persistentModelID), label: action.reference ?? "the action")
             withAnimation(.snappy) { pane = .transcript }
             highlightedSegment = id
         }
