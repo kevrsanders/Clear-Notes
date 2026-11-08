@@ -31,18 +31,24 @@ enum ActionReference {
     /// each word (and of each part of a hyphenated one), at most four, or the first three letters
     /// of a single word. Nil when the title has no letters.
     static func prefix(forTitle title: String) -> String? {
-        let words = title
-            .split(whereSeparator: \.isWhitespace)
-            .map(String.init)
-            .filter { !smallWords.contains($0.lowercased()) }
-            .flatMap { word in word.split(separator: "-").map(String.init) }
-            .map { word in word.filter(\.isLetter) }
-            .filter { !$0.isEmpty }
+        var words: [String] = []
+        for word in title.split(whereSeparator: { $0.isWhitespace }) {
+            if smallWords.contains(word.lowercased()) { continue }
+            // Each part of a hyphenated word counts: "check-in" gives C and I.
+            for part in word.split(separator: "-") {
+                let letters = String(part.filter { $0.isLetter })
+                if !letters.isEmpty { words.append(letters) }
+            }
+        }
         guard let first = words.first else { return nil }
         if words.count == 1 {
             return String(first.prefix(3)).uppercased()
         }
-        return String(words.prefix(4).compactMap(\.first)).uppercased()
+        var initials = ""
+        for word in words.prefix(4) {
+            if let letter = word.first { initials.append(letter) }
+        }
+        return initials.uppercased()
     }
 
     /// Numbers the accepted actions of meetings from before references, once, at launch.
