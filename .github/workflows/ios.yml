@@ -53,13 +53,22 @@ jobs:
           brew install xcodegen
           xcodegen generate
 
+      # Keeps the downloaded Swift packages between runs, so once they've been fetched a
+      # GitHub download outage can't stop a build.
+      - name: Restore Swift packages
+        uses: actions/cache@v4
+        with:
+          path: ~/SourcePackages
+          key: spm-${{ hashFiles('ios/project.yml') }}
+          restore-keys: spm-
+
       # Swift packages (and the prebuilt frameworks they need) download from GitHub, which
       # sometimes times out (504). Fetching them first, with retries, keeps a blip from
       # failing the whole run; the build steps then reuse what was fetched.
       - name: Fetch Swift packages
         run: |
           for attempt in 1 2 3; do
-            if xcodebuild -resolvePackageDependencies -project ClearNotes.xcodeproj -scheme ClearNotes; then
+            if xcodebuild -resolvePackageDependencies -project ClearNotes.xcodeproj -scheme ClearNotes -clonedSourcePackagesDirPath "$HOME/SourcePackages"; then
               exit 0
             fi
             echo "Fetching packages failed (attempt $attempt of 3)"
@@ -84,6 +93,7 @@ jobs:
       - name: Build and run unit tests
         run: |
           xcodebuild test \
+            -clonedSourcePackagesDirPath "$HOME/SourcePackages" \
             -project ClearNotes.xcodeproj \
             -scheme ClearNotes \
             -destination "id=$SIM_ID" \
@@ -158,13 +168,22 @@ jobs:
           sed -i '' "s/WKCompanionAppBundleIdentifier: com.clearnotes.app/WKCompanionAppBundleIdentifier: $BUNDLE_ID/" project.yml
           xcodegen generate
 
+      # Keeps the downloaded Swift packages between runs, so once they've been fetched a
+      # GitHub download outage can't stop a build.
+      - name: Restore Swift packages
+        uses: actions/cache@v4
+        with:
+          path: ~/SourcePackages
+          key: spm-${{ hashFiles('ios/project.yml') }}
+          restore-keys: spm-
+
       # Swift packages (and the prebuilt frameworks they need) download from GitHub, which
       # sometimes times out (504). Fetching them first, with retries, keeps a blip from
       # failing the whole run; the build steps then reuse what was fetched.
       - name: Fetch Swift packages
         run: |
           for attempt in 1 2 3; do
-            if xcodebuild -resolvePackageDependencies -project ClearNotes.xcodeproj -scheme ClearNotes; then
+            if xcodebuild -resolvePackageDependencies -project ClearNotes.xcodeproj -scheme ClearNotes -clonedSourcePackagesDirPath "$HOME/SourcePackages"; then
               exit 0
             fi
             echo "Fetching packages failed (attempt $attempt of 3)"
@@ -184,6 +203,7 @@ jobs:
       - name: Archive
         run: |
           xcodebuild archive \
+            -clonedSourcePackagesDirPath "$HOME/SourcePackages" \
             -project ClearNotes.xcodeproj \
             -scheme ClearNotes \
             -configuration Release \
