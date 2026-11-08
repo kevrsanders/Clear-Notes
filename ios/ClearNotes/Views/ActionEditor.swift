@@ -13,6 +13,7 @@ struct ActionEditor: View {
     @State private var text: String
     @State private var owner: String
     @State private var due: String
+    @State private var detail: String
     @State private var picksDate = false
     @State private var date = Calendar.current.startOfDay(for: .now)
     @State private var confirmDelete = false
@@ -22,6 +23,7 @@ struct ActionEditor: View {
         self.people = people
         _text = State(initialValue: action.text)
         _owner = State(initialValue: action.owner ?? "")
+        _detail = State(initialValue: action.context ?? "")
         _due = State(initialValue: action.due ?? "")
     }
 
@@ -34,6 +36,9 @@ struct ActionEditor: View {
                 Section("Action") {
                     TextField("What needs doing", text: $text, axis: .vertical)
                         .lineLimit(2...6)
+                    TextField("Detail, e.g. who it's for or what to include", text: $detail, axis: .vertical)
+                        .lineLimit(1...4)
+                        .foregroundStyle(Theme.textSecondary)
                 }
 
                 Section {
@@ -115,6 +120,8 @@ struct ActionEditor: View {
             let trimmedDue = due.trimmingCharacters(in: .whitespacesAndNewlines)
             action.due = trimmedDue.isEmpty ? nil : trimmedDue
         }
+        let trimmedDetail = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        action.context = trimmedDetail.isEmpty ? nil : trimmedDetail
         if action.status == .suggested {
             action.status = .open
         }

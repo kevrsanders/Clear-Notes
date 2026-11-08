@@ -1048,6 +1048,12 @@ struct MeetingDetailView: View {
                     .strikethrough(isDone)
                     .foregroundStyle(isDone ? Theme.textSecondary : Color.primary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let context = action.context, !context.isEmpty {
+                    Text(context)
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let due = action.due {
                     Text(due)
                         .font(.caption)

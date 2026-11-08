@@ -74,11 +74,12 @@ enum SpokenMarks {
 
 /// Decides which of the actions the notes found are worth suggesting.
 enum ActionPolicy {
-    /// Words that show someone promised or was asked to do something.
+    /// Words that show someone promised or was asked to do something. Not "I can", "let me" or
+    /// "we'll", which are as often "I can see why", "let me think" or "we'll see".
     static let commitmentCues = [
-        "i will", "i'll", "i can", "i'm going to", "i am going to", "let me", "i'll make sure",
-        "can you", "could you", "would you", "will you", "please can", "you'll", "you will",
-        "we will", "we'll", "action for", "action point", "leave it with me", "i'll take",
+        "i will", "i'll", "i'm going to", "i am going to", "i'll make sure",
+        "can you", "could you", "would you", "will you", "please can",
+        "action for", "action point", "leave it with me", "i'll take",
     ]
 
     /// About one suggestion for every five minutes, and at least two.
@@ -87,6 +88,8 @@ enum ActionPolicy {
     }
 
     static func isClearCommitment(_ action: ExtractedAction) -> Bool {
+        // Checked against what was said around it, and someone took it on.
+        if action.checked == true { return true }
         if action.owner != nil && action.due != nil { return true }
         guard let evidence = action.evidence else { return false }
         let words = HeuristicEnhancer.normalized(evidence)

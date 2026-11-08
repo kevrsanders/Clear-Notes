@@ -20,18 +20,23 @@ final class ActionItem {
     var sourceSegmentID: UUID?
     /// The mark this action was written from, so regenerating the notes doesn't add it twice.
     var markID: UUID?
+    /// A short line of detail from what was said around it, e.g. "Priya needs it for Monday's
+    /// planning meeting".
+    var context: String?
     var meeting: Meeting?
 
     init(
         text: String,
         owner: String? = nil,
         due: String? = nil,
+        context: String? = nil,
         status: ActionStatus = .suggested,
         sourceSegmentID: UUID? = nil
     ) {
         self.text = text
         self.owner = owner
         self.due = due
+        self.context = context
         self.statusRaw = status.rawValue
         self.createdAt = .now
         self.sourceSegmentID = sourceSegmentID

@@ -112,7 +112,7 @@ enum MeetingProcessor {
         meeting.notesPartsDone = 0
         meeting.notesPartsTotal = 0
         stage(.notes)
-        let insights: MeetingInsights
+        var insights: MeetingInsights
         let source: String
         switch await writeNotes(for: meeting, with: enhancer) {
         case .written(let written, let writtenBy):
@@ -131,9 +131,27 @@ enum MeetingProcessor {
             continued.finish(.failed)
             return
         }
+        // Each possible action is checked against the turns around where it was said: kept only if
+        // someone took it on, and rewritten so it stands on its own, with its details. A voice
+        // note's to-dos are the user's own, so they aren't checked.
+        let suggestionSetting = ActionSuggestions.current
+        if suggestionSetting != .markedOnly, meeting.kind != .voiceNote {
+            insights.actions = await ActionCheck.review(
+                insights.actions,
+                segments: meeting.segments,
+                speakers: meeting.speakers,
+                meetingDate: meeting.createdAt,
+                keepAll: suggestionSetting == .everything
+            )
+        }
         // Moments marked while recording (taps and spoken phrases) become actions and decisions.
         let marks = meeting.marks + SpokenMarks.find(in: meeting.segments, besides: meeting.marks)
-        let marked = await MarkWriter.write(marks, segments: meeting.segments, speakers: meeting.speakers)
+        var marked = await MarkWriter.write(marks, segments: meeting.segments, speakers: meeting.speakers)
+        marked.actions = marked.actions.map { action in
+            var action = action
+            action.due = action.due.map { DueDate.resolved($0, from: meeting.createdAt) }
+            return action
+        }
         apply(insights, marked: marked, to: meeting)
         meeting.insightsSource = source
         meeting.notesCaveat = insights.note
@@ -409,6 +427,7 @@ enum MeetingProcessor {
                     text: extracted.task,
                     owner: matchOwner(extracted.owner),
                     due: extracted.due,
+                    context: extracted.context,
                     status: .open,
                     sourceSegmentID: sourceSegmentID(forMark: extracted.markID, in: meeting)
                         ?? meeting.segments.segment(matching: extracted.evidence)?.id
@@ -432,6 +451,7 @@ enum MeetingProcessor {
                 text: extracted.task,
                 owner: isVoiceNote ? nil : matchOwner(extracted.owner),
                 due: extracted.due,
+                context: extracted.context,
                 status: isVoiceNote ? .open : .suggested,
                 sourceSegmentID: meeting.segments.segment(matching: extracted.evidence)?.id
             )

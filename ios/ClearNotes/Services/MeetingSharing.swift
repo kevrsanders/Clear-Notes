@@ -70,7 +70,8 @@ enum MeetingSharing {
                 .map {
                     SharedMeeting.Action(
                         text: $0.text, owner: $0.owner, due: $0.due,
-                        status: $0.status.rawValue, sourceLineID: $0.sourceSegmentID
+                        status: $0.status.rawValue, sourceLineID: $0.sourceSegmentID,
+                        context: $0.context
                     )
                 },
             minutes: meeting.minutes.isEmpty ? nil : meeting.minutes,
@@ -122,6 +123,7 @@ enum MeetingSharing {
                 var line = "• \(action.text)"
                 let details = [action.owner, action.due].compactMap { $0 }
                 if !details.isEmpty { line += " — " + details.joined(separator: ", ") }
+                if let context = action.context { line += ". \(context)" }
                 if action.status == .done { line += " (done)" }
                 return line
             }
@@ -212,6 +214,7 @@ enum MeetingSharing {
                 text: action.text,
                 owner: action.owner,
                 due: action.due,
+                context: action.context,
                 status: ActionStatus(rawValue: action.status) ?? .open,
                 sourceSegmentID: action.sourceLineID
             )

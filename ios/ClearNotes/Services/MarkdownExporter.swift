@@ -43,6 +43,7 @@ enum MarkdownExporter {
                 var line = "- [\(action.status == .done ? "x" : " ")] \(action.text)"
                 let details = [action.owner, action.due].compactMap { $0 }
                 if !details.isEmpty { line += " (\(details.joined(separator: ", ")))" }
+                if let context = action.context { line += " — \(context)" }
                 return line
             }
             lines.append("")

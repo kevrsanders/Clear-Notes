@@ -83,7 +83,7 @@ A reader checks the size and hash against the pieces it received, so a damaged o
 | `summary` | string | "- " bullet lines. |
 | `topics` | [{`title`, `start`, `end`, `points`}] | |
 | `decisions` | [string] | |
-| `actions` | [{`text`, `owner`?, `due`?, `status`, `sourceLineID`?}] | `status` is `suggested`, `open`, `done` or `dismissed`. Dismissed actions aren't shared. `sourceLineID` is a transcript line's `id`. |
+| `actions` | [{`text`, `owner`?, `due`?, `status`, `sourceLineID`?, `context`?}] | `status` is `suggested`, `open`, `done` or `dismissed`. Dismissed actions aren't shared. `sourceLineID` is a transcript line's `id`. `context` (from 0.3) is a short line of detail, e.g. who it's for; older files leave it out. |
 | `minutes` | string? | Plain-text minutes (numbered items, `Agreed:` and `Action:` lines). |
 | `kind` | string? | What was recorded: `meeting`, `catchUp` (a quick catch-up; `invited` holds who it was with) or `voiceNote`. Missing means `meeting`. |
 | `privateNotes` | string? | Only when the sender chose to include them. |

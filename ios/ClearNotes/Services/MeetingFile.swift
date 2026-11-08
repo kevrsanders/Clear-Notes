@@ -45,6 +45,8 @@ struct SharedMeeting: Codable, Equatable, Sendable {
         var status: String
         /// The transcript line it came from.
         var sourceLineID: UUID?
+        /// A short line of detail, e.g. who it's for. Added in 0.3; older files don't have it.
+        var context: String?
     }
 
     struct Recording: Codable, Equatable, Sendable {

@@ -9,6 +9,11 @@ struct ExtractedAction: Codable, Equatable, Sendable {
     var evidence: String?
     /// Set when the user marked this action while recording.
     var markID: UUID?
+    /// A short line of detail from what was said around it: why it's needed, who it's for, or
+    /// what it should include.
+    var context: String?
+    /// True once it's been checked against what was said around it and someone took it on.
+    var checked: Bool?
 }
 
 struct MeetingInsights: Equatable, Sendable {
@@ -258,6 +263,40 @@ enum ActionList {
             }
         }
         return kept.map { $0.action }
+    }
+
+    /// Like `deduplicated`, but when the same action comes up twice (agreed, then recapped at the
+    /// end) it keeps one, in the earlier place, with the most specific wording and every detail
+    /// either of them had.
+    static func merged(_ actions: [ExtractedAction]) -> [ExtractedAction] {
+        var kept: [(action: ExtractedAction, words: Set<String>)] = []
+        for action in actions {
+            let words = significantWords(action.task)
+            guard !words.isEmpty else { continue }
+            let repeated = kept.firstIndex { other in
+                let overlap = Double(words.intersection(other.words).count) / Double(words.union(other.words).count)
+                return overlap >= 0.6 && sameOrUnknownOwner(action.owner, other.action.owner)
+            }
+            guard let repeated else {
+                kept.append((action, words))
+                continue
+            }
+            let earlier = kept[repeated].action
+            var best = detail(action) > detail(earlier) ? action : earlier
+            let other = detail(action) > detail(earlier) ? earlier : action
+            best.owner = best.owner ?? other.owner
+            best.due = best.due ?? other.due
+            best.context = best.context ?? other.context
+            best.evidence = best.evidence ?? other.evidence
+            best.markID = best.markID ?? other.markID
+            kept[repeated] = (best, significantWords(best.task))
+        }
+        return kept.map { $0.action }
+    }
+
+    /// How much an action says: who, when and why.
+    private static func detail(_ action: ExtractedAction) -> Int {
+        (action.owner != nil ? 2 : 0) + (action.due != nil ? 2 : 0) + (action.context != nil ? 1 : 0)
     }
 
     /// Mostly the same words, e.g. an action that repeats a decision.

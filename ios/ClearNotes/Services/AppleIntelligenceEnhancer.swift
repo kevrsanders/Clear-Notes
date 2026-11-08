@@ -31,12 +31,43 @@ struct ChunkInsights {
 @available(iOS 26.0, *)
 @Generable
 struct MarkedActionText {
-    @Guide(description: "The one task agreed just before the mark, starting with a verb, e.g. 'Send the revised budget to finance'")
+    @Guide(description: "The one task agreed just before the mark, starting with a verb, written so it makes sense on its own: replace 'it', 'that', 'this' and 'them' with what they refer to, e.g. 'Send the revised budget to finance'")
     var task: String
     @Guide(description: "The name of the person who will do it, or an empty string if nobody was named. Never a label like 'Speaker 2'.")
     var owner: String
     @Guide(description: "The deadline exactly as it was said, or an empty string if none was given")
     var due: String
+    @Guide(description: "One short phrase of useful detail said in the excerpt: why it's needed, who it's for, or what it should include. An empty string if the excerpt gives none. Never invent anything.")
+    var context: String
+}
+
+/// What a possible action turned out to be, once what was said around it is read.
+@available(iOS 26.0, *)
+@Generable
+enum ActionVerdict {
+    case promise
+    case acceptedRequest
+    case passedToSomeoneElse
+    case declined
+    case ideaOrSuggestion
+    case alreadyDone
+    case decision
+    case notATask
+}
+
+@available(iOS 26.0, *)
+@Generable
+struct CheckedAction {
+    @Guide(description: "What the >> line really is, judged from what was said before and after it. promise: the speaker says they will do something. acceptedRequest: someone is asked to do something and agrees, or goes along with it. passedToSomeoneElse: it's said that a different, named person will do it. declined: they say no. ideaOrSuggestion: 'we should', 'it would be good to', 'maybe', with nobody taking it on. alreadyDone: it has already been done. decision: something the group agreed, not a task for one person. notATask: anything else.")
+    var verdict: ActionVerdict
+    @Guide(description: "The task, starting with a verb, written so it makes sense on its own: replace 'it', 'that', 'this' and 'them' with what they refer to in the excerpt, e.g. 'Send the revised rota to the ward managers'. An empty string if it isn't a task.")
+    var task: String
+    @Guide(description: "The name of the person who will do it, which isn't always the person speaking, or an empty string if nobody was named. Never a label like 'Speaker 2'.")
+    var owner: String
+    @Guide(description: "The deadline exactly as it was said, e.g. 'by Friday', or an empty string if none was given")
+    var due: String
+    @Guide(description: "One short phrase of useful detail said in the excerpt: why it's needed, who it's for, or what it should include, e.g. 'Priya needs it for Monday's planning meeting'. An empty string if the excerpt gives none. Never invent anything.")
+    var context: String
 }
 
 @available(iOS 26.0, *)
@@ -210,8 +241,48 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
         return ExtractedAction(
             task: task,
             owner: result.owner.isEmpty ? nil : NotesText.plain(result.owner),
-            due: result.due.isEmpty ? nil : NotesText.plain(result.due)
+            due: result.due.isEmpty ? nil : NotesText.plain(result.due),
+            context: Self.optionalText(result.context)
         )
+    }
+
+    /// Reads what was said around a possible action (the line marked ">>") and says what it really
+    /// is, rewriting the task so it stands on its own. Nil if the model can't answer.
+    func checkAction(excerpt: String, noted: String) async -> ActionCheck.Result? {
+        let prompt = """
+            The line starting with >> in this meeting excerpt was noted as a possible task: "\(noted)". \
+            Read what was said before it and after it. Decide whether someone really took on a task, \
+            and write it with the details the excerpt gives.
+
+            Excerpt:
+            \(excerpt)
+            """
+        guard let result = try? await generate(prompt, as: CheckedAction.self) else { return nil }
+        let verdict: ActionCheck.Verdict = switch result.verdict {
+        case .promise: .promise
+        case .acceptedRequest: .acceptedRequest
+        case .passedToSomeoneElse: .passedOn
+        case .declined: .declined
+        case .ideaOrSuggestion: .idea
+        case .alreadyDone: .alreadyDone
+        case .decision: .decision
+        case .notATask: .notATask
+        }
+        return ActionCheck.Result(
+            verdict: verdict,
+            action: ExtractedAction(
+                task: NotesText.plain(result.task),
+                owner: Self.optionalText(result.owner),
+                due: Self.optionalText(result.due),
+                context: Self.optionalText(result.context)
+            )
+        )
+    }
+
+    /// Nil for an empty answer.
+    private static func optionalText(_ text: String) -> String? {
+        let plain = NotesText.plain(text)
+        return plain.isEmpty ? nil : plain
     }
 
     /// Writes the decision agreed just before a mark, or nil if the model can't.

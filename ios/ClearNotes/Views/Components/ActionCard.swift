@@ -34,6 +34,12 @@ struct ActionCard: View {
                         .onTapGesture { onEdit?() }
                         .accessibilityAddTraits(onEdit == nil ? [] : .isButton)
                         .accessibilityHint(onEdit == nil ? "" : "Edit, assign or set a date")
+                    if let context = action.context, !context.isEmpty {
+                        Text(context)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     details
                 }
                 Spacer(minLength: 0)
