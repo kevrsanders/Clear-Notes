@@ -73,6 +73,19 @@ final class FollowUpAndTopicTests: XCTestCase {
         XCTAssertTrue(HeuristicEnhancer.topics(in: segments).isEmpty)
     }
 
+    func testAShortMeetingIsOneTopicSoItsPageHasTopics() async throws {
+        let segments = [
+            TranscriptSegment(start: 0, end: 60, text: "The budget review comes first and the budget looks healthy for the quarter."),
+            TranscriptSegment(start: 60, end: 120, text: "We also need to talk about the budget for training next year please."),
+        ]
+        let insights = try await HeuristicEnhancer().enhance(segments: segments, speakers: [], userNotes: "")
+        XCTAssertEqual(insights.topics.count, 1)
+        XCTAssertEqual(insights.topics.first?.title, "Budget")
+        XCTAssertEqual(insights.topics.first?.start, 0)
+        XCTAssertEqual(insights.topics.first?.end, 120)
+        XCTAssertEqual(insights.topics.first?.points.count, 2)
+    }
+
     func testTopicsSplitIntoWindowsTitledByKeywords() {
         let segments = [
             TranscriptSegment(start: 0, end: 200, text: "The budget review is first. The budget looks healthy for the quarter overall."),

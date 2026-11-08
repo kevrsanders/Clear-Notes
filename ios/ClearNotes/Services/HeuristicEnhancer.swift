@@ -54,13 +54,32 @@ struct HeuristicEnhancer: NotesEnhancer {
             }
         }
 
+        let summary = Self.summary(segments: segments, userNotes: userNotes)
+        let topics = Self.topics(in: segments)
         return MeetingInsights(
             title: nil,
-            summary: Self.summary(segments: segments, userNotes: userNotes),
+            summary: summary,
             decisions: Self.unique(decisions),
             actions: Self.unique(actions, by: \.task),
-            topics: Self.topics(in: segments)
+            topics: topics.isEmpty ? Self.wholeMeetingTopic(segments: segments, summary: summary) : topics
         )
+    }
+
+    /// One topic for a meeting too short to split, so its page still has topics: its main words
+    /// for a title, and the summary's points.
+    static func wholeMeetingTopic(segments: [TranscriptSegment], summary: String) -> [Topic] {
+        guard let first = segments.first, let last = segments.last else { return [] }
+        let keywords = Self.keywords(in: segments.map(\.text).joined(separator: " "), limit: 2)
+        // Only real points, not "Short meeting. See the transcript for details."
+        let points = summary.hasPrefix("-") ? NotesText.bullets(from: summary).prefix(5) : []
+        guard !keywords.isEmpty, !points.isEmpty else { return [] }
+        let title = keywords.joined(separator: " and ")
+        return [Topic(
+            title: title.prefix(1).uppercased() + title.dropFirst(),
+            start: first.start,
+            end: last.end,
+            points: Array(points)
+        )]
     }
 
     // MARK: - Topics

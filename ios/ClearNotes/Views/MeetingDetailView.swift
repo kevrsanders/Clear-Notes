@@ -1103,18 +1103,16 @@ struct MeetingDetailView: View {
         .contentShape(Rectangle())
     }
 
-    /// Summary, topics and decisions on one surface, so the notes read like a page.
+    /// Topics and decisions on one surface, so the notes read like a page. No summary: the topics
+    /// say what was covered, each with its points and where it was in the meeting.
     private var document: some View {
         VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 14) {
-                CardHeader(title: "Summary", systemImage: "sparkles")
-                BulletList(text: meeting.summary.isEmpty ? "No summary yet." : meeting.summary)
-            }
-
-            if !meeting.topics.isEmpty {
-                Divider()
-                VStack(alignment: .leading, spacing: 16) {
-                    CardHeader(title: "Topics", systemImage: "list.bullet.rectangle.portrait")
+            VStack(alignment: .leading, spacing: 16) {
+                CardHeader(title: "Topics", systemImage: "list.bullet.rectangle.portrait")
+                if meeting.topics.isEmpty {
+                    // Notes written before every meeting had topics: their points, until regenerated.
+                    BulletList(text: meeting.summary.isEmpty ? "No topics yet." : meeting.summary)
+                } else {
                     ForEach(meeting.topics) { topic in
                         Button {
                             jump(to: topic)

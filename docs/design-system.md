@@ -130,11 +130,11 @@ Every menu, held-down menu, picker and confirmation is a solid sheet from the bo
 ### 3a. Overview as a document (v2.1)
 Replaces the stack of Summary / Decisions cards with **one document surface** (a single `Card`, padding 22), so the notes read like a page. The v2 tokens, colours and type stay the same.
 
-1. **Summary**: `GradientIcon` sparkles + "Summary" (Title 3 bold), bullets with brand dots
+1. **Topics** (no summary on a meeting's page): `GradientIcon` list icon + "Topics". One row per topic: a monospaced time-range chip ("0:00–10:12", brand tint) and the topic title (headline), then 1–3 bullet points (subhead, secondary; up to 5 when a short meeting is one topic). Tapping a topic opens the Transcript at that time and highlights the first line. Notes written before every meeting had topics show their summary points here until regenerated
 2. Hairline divider
-3. **Topics**: `GradientIcon` list icon + "Topics". One row per topic: a monospaced time-range chip ("0:00–10:12", brand tint) and the topic title (headline), then 1–3 bullet points (subhead, secondary). Tapping a topic opens the Transcript at that time and highlights the first line
-4. Hairline divider
-5. **Decisions**: numbered green circles (as before)
+3. **Decisions**: numbered green circles (as before)
+
+The summary is still written: it's the preview on meeting cards, Last time, search, exports, the follow-up email and the minutes' key points. Catch-ups ("What you covered") and voice notes ("Note") keep it as their main text.
 
 Below the document:
 - **Follow-ups** card: three rows separated by hairlines, each a 40pt tinted icon tile + title + subtitle + chevron:

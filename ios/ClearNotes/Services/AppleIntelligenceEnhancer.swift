@@ -173,7 +173,10 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
 
         let decisions = parts.flatMap(\.decisions)
         let actions = parts.flatMap(\.actions)
-        let topics = parts.map { Topic(title: $0.topic, start: $0.start, end: $0.end, points: Array($0.keyPoints.prefix(3))) }
+        // A meeting's page shows its topics, not a summary, so even a short meeting written in one
+        // part has one, with a few more of its points.
+        let pointsPerTopic = parts.count == 1 ? 5 : 3
+        let topics = parts.map { Topic(title: $0.topic, start: $0.start, end: $0.end, points: Array($0.keyPoints.prefix(pointsPerTopic))) }
         var reasons: [String] = []
         for part in parts {
             if let reason = part.basicReason, !reasons.contains(reason) { reasons.append(reason) }
@@ -222,8 +225,7 @@ struct AppleIntelligenceEnhancer: NotesEnhancer {
             summary: summary,
             decisions: decisions,
             actions: actions,
-            // One part covers the whole meeting, so topics would only repeat the summary.
-            topics: topics.count > 1 ? topics.filter { !$0.title.isEmpty } : [],
+            topics: topics.filter { !$0.title.isEmpty },
             note: note
         )
     }
