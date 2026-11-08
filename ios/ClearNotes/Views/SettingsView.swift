@@ -86,6 +86,8 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.reminderShowsTitle) private var reminderShowsTitle = false
     /// Notifications are turned off for Clear Notes in iOS Settings.
     @State private var remindersBlocked = false
+    @State private var choosingActionSuggestions = false
+    @State private var choosingAudioRetention = false
     @State private var isDownloadingTranscriber = false
     @State private var transcriberError: String?
     @State private var calendarBlocked = CalendarReader.isBlocked
@@ -184,82 +186,26 @@ struct SettingsView: View {
                     }
 
                     section("Actions", footer: (ActionSuggestions(rawValue: actionSuggestions) ?? .default).explanation + " While recording, tap Mark action or Mark decision just after one is agreed, or say \"action point\" or \"decision point\". Marked moments become open actions and decisions after the meeting.") {
-                        Picker(selection: $actionSuggestions) {
-                            ForEach(ActionSuggestions.allCases) { option in
-                                Text(option.title).tag(option.rawValue)
-                            }
-                        } label: {
-                            Label {
-                                Text("Suggest actions")
-                            } icon: {
-                                Image(systemName: "checklist")
-                                    .foregroundStyle(Theme.brand)
-                            }
-                        }
-                        .tint(Theme.brand)
-                    }
-
-                    section("Calendar", footer: "Reads today's events from your main calendar, and from any others you turn on in Choose calendars. Colleagues' shared calendars stay off unless you turn them on. Meetings with other people invited come before blocks like WFH or Focus time. Recordings take the meeting's title, invited people are suggested when naming speakers and action owners, and the Teams link is kept for later. Only the title, invited names and Teams link are saved with each meeting. Nothing is sent anywhere. Remind me when a meeting starts: a notification as each meeting with other people begins, with Record. With Apple Watch, Record starts recording on the watch. The name is left out unless you choose to show it, since anyone who can see your Lock Screen or watch can read it.") {
-                        Toggle(isOn: calendarToggle) {
-                            Label {
-                                Text("Use my calendar")
-                            } icon: {
-                                Image(systemName: "calendar")
-                                    .foregroundStyle(Theme.brand)
-                            }
-                        }
-                        .tint(Theme.brand)
-                        if useCalendar && CalendarReader.hasAccess {
-                            Divider()
-                            NavigationLink {
-                                CalendarsView()
-                            } label: {
-                                Text("Choose calendars")
-                            }
-                            Divider()
-                            toggle("Remind me when a meeting starts", systemImage: "bell.badge", isOn: remindersToggle)
-                            if meetingReminders {
-                                toggle("Show the meeting's name", systemImage: "text.bubble", isOn: $reminderShowsTitle)
-                            }
-                            if remindersBlocked {
-                                Text("Notifications are off for Clear Notes. Turn them on in iOS Settings → Notifications.")
-                                    .font(.footnote)
-                                    .foregroundStyle(Theme.warning)
-                            }
-                        }
-                        if calendarBlocked {
-                            Divider()
-                            HStack(spacing: 12) {
-                                Text("Calendar access is off for Clear Notes. Turn on Full Access in iOS Settings.")
-                                    .font(.footnote)
-                                    .foregroundStyle(Theme.warning)
-                                Spacer(minLength: 0)
-                                if let url = URL(string: UIApplication.openSettingsURLString) {
-                                    Button("Settings") { UIApplication.shared.open(url) }
-                                        .buttonStyle(SecondaryButtonStyle(compact: true))
-                                }
-                            }
+                        choiceRow(
+                            "Suggest actions",
+                            systemImage: "checklist",
+                            value: (ActionSuggestions(rawValue: actionSuggestions) ?? .default).title
+                        ) {
+                            choosingActionSuggestions = true
                         }
                     }
-
                     section("Microphone", footer: "Echo and noise reduction is the processing iPhone uses for speakerphone calls. It cleans up echo and hiss but works best within a metre or two, so it can quieten people further away. Leave it off for meetings round a table. A plugged-in USB conference microphone is used automatically and picks up a room best.") {
                         toggle("Reduce echo and noise", systemImage: "waveform.badge.minus", isOn: $reduceEchoAndNoise)
                     }
 
                     section("Recordings", footer: (AudioRetention(rawValue: audioRetention) ?? .default).promise + " Recordings are excluded from backups and never leave this iPhone. Deleted meetings stay in Recently deleted for 7 days, recording included, then are deleted for good.") {
-                        Picker(selection: $audioRetention) {
-                            ForEach(AudioRetention.allCases) { option in
-                                Text(option.title).tag(option.rawValue)
-                            }
-                        } label: {
-                            Label {
-                                Text("Keep recordings")
-                            } icon: {
-                                Image(systemName: "waveform")
-                                    .foregroundStyle(Theme.brand)
-                            }
+                        choiceRow(
+                            "Keep recordings",
+                            systemImage: "waveform",
+                            value: (AudioRetention(rawValue: audioRetention) ?? .default).title
+                        ) {
+                            choosingAudioRetention = true
                         }
-                        .tint(Theme.brand)
                         Divider()
                         NavigationLink {
                             RecentlyDeletedView()
@@ -330,6 +276,28 @@ struct SettingsView: View {
             .scrollDismissesKeyboard(.immediately)
             .background { ScreenBackground() }
             .toolbar(.hidden, for: .navigationBar)
+            .menuSheet(isPresented: $choosingActionSuggestions) {
+                MenuSheet("Suggest actions") {
+                    MenuGroup {
+                        ForEach(ActionSuggestions.allCases) { option in
+                            MenuRow(option.title, subtitle: option.explanation, isSelected: option.rawValue == actionSuggestions) {
+                                actionSuggestions = option.rawValue
+                            }
+                        }
+                    }
+                }
+            }
+            .menuSheet(isPresented: $choosingAudioRetention) {
+                MenuSheet("Keep recordings", message: "Recordings are excluded from backups and never leave this iPhone.") {
+                    MenuGroup {
+                        ForEach(AudioRetention.allCases) { option in
+                            MenuRow(option.title, isSelected: option.rawValue == audioRetention) {
+                                audioRetention = option.rawValue
+                            }
+                        }
+                    }
+                }
+            }
             .onAppear {
                 calendarBlocked = CalendarReader.isBlocked
                 // Access may have been removed in iOS Settings since it was turned on.
@@ -514,6 +482,31 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// A setting with a few choices: its current value, which opens a menu sheet to change it.
+    private func choiceRow(_ title: String, systemImage: String, value: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Label {
+                    Text(title)
+                        .foregroundStyle(Color.primary)
+                } icon: {
+                    Image(systemName: systemImage)
+                        .foregroundStyle(Theme.brand)
+                }
+                Spacer(minLength: 8)
+                Text(value)
+                    .foregroundStyle(Theme.brand)
+                    .multilineTextAlignment(.trailing)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.brand)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(value)
     }
 
     private func toggle(_ title: String, systemImage: String, isOn: Binding<Bool>) -> some View {

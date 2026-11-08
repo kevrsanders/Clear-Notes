@@ -20,6 +20,12 @@ enum Theme {
     /// Decisions: green, or amber with the sage accent so green doesn't mean two things.
     static var decision: Color { AppAccent.current.decision }
     static let warning = Color.dynamic(light: 0xD97706, dark: 0xFFB020)
+    /// Options that delete something.
+    static let danger = Color(uiColor: .systemRed)
+    /// Menu sheets (`MenuSheet`): the sheet itself, and the cards of options on it. Solid, a
+    /// step lighter than the screen in dark mode so the sheet's edge shows.
+    static let sheetBackground = Color.dynamic(light: 0xF2F2F7, dark: 0x16161D)
+    static let sheetGroup = Color.dynamic(light: 0xFFFFFF, dark: 0x22222B)
     static let record = Color(hex: 0xFF4D6A)
     /// Meeting types: a quick catch-up and a voice note. Meetings use the brand colour. Each
     /// avoids the accent, so the three stay distinct.

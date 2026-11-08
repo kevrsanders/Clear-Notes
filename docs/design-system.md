@@ -5,7 +5,7 @@ v1 looked like a stock iOS settings screen: grey grouped lists, hairline rows, s
 - **Calm, plain surfaces**: a flat background with solid cards, no glow or glass
 - **People first**: coloured speaker avatars appear on cards, in transcripts and on actions
 - **Bold typography** with clear hierarchy, plus small uppercase "eyebrow" labels
-- **Solid everywhere, no glass.** Controls (buttons, the search field, tabs, floating bars) use the card surface with a hairline outline (`panel(in:)`), and `UIDesignRequiresCompatibility` keeps iOS 26's system bars and menus solid too
+- **Solid everywhere, no glass.** Controls (buttons, the search field, tabs, floating bars) use the card surface with a hairline outline (`panel(in:)`), and `UIDesignRequiresCompatibility` keeps iOS 26's system bars solid too. iOS always draws its own menus, context menus and confirmation dialogs frosted, so the app uses none: every menu is a `MenuSheet` (below)
 - **One signature gradient** (violet → blue) for AI and brand moments, and one warm gradient (coral → pink) for recording
 
 ## Tokens
@@ -60,6 +60,17 @@ v1 looked like a stock iOS settings screen: grey grouped lists, hairline rows, s
 | Tinted | background #111115, ink #FFFFFF, highlight #5C5C63 (greyscale; iOS applies the tint) |
 
 The iPhone icon has all three appearances; the Apple Watch uses the light one (watchOS crops it to a circle). The SVG sources are in `docs/app-icon/`. Each PNG is 1024 × 1024, square and opaque; iOS applies the rounded mask.
+
+## Menus (`MenuSheet`)
+
+Every menu, held-down menu, picker and confirmation is a solid sheet from the bottom, sized to fit:
+
+- Sheet `Theme.sheetBackground` (light #F2F2F7, dark #16161D), corner radius 32, drag indicator.
+- Optional title (headline) and message (subheadline, secondary) at the top.
+- Options on cards (`MenuGroup`, `Theme.sheetGroup`: white / #22222B, radius 18), hairlines between rows inset past the icon.
+- `MenuRow`: brand-coloured SF Symbol, title, optional footnote line under it, a tick for the current choice. Deleting options are red (`Theme.danger`) and come last, on their own card.
+- `MenuChips` for a short set of choices on one line (a meeting's type). `MenuCancelButton` on its own card ends a confirmation.
+- Choosing an option closes the sheet, then runs it. Holding a card, action, decision or transcript line opens its sheet (`onHoldForMenu`, with a haptic tap; VoiceOver "More options").
 
 ## Components
 

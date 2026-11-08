@@ -9,6 +9,11 @@ struct ActionCard: View {
     /// When set, tapping the action (or Assign) opens it to change what, who and when.
     var onEdit: (() -> Void)?
 
+    /// The ⋯ menu, also opened by holding the card.
+    @State private var showingMenu = false
+
+    private var hasMenu: Bool { onMakeDecision != nil || onEdit != nil || onShowSource != nil }
+
     /// The speaker whose name matches the owner, so the owner uses their colour.
     private var ownerSpeaker: Speaker? {
         guard let owner = action.owner?.lowercased() else { return nil }
@@ -53,9 +58,9 @@ struct ActionCard: View {
                     }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
 
-                    if onMakeDecision != nil || onEdit != nil || onShowSource != nil {
-                        Menu {
-                            moreActions
+                    if hasMenu {
+                        Button {
+                            showingMenu = true
                         } label: {
                             Image(systemName: "ellipsis")
                                 .font(.system(size: 15, weight: .bold))
@@ -64,51 +69,29 @@ struct ActionCard: View {
                                 .background(Color.primary.opacity(0.08), in: Circle())
                                 .contentShape(Circle())
                         }
+                        .buttonStyle(.plain)
                         .accessibilityLabel("More")
                     }
                 }
             }
         }
         .cardStyle(padding: 16)
-        .contextMenu {
-            if let onShowSource {
-                Button(action: onShowSource) {
-                    Label("Show source", systemImage: "quote.opening")
+        .onHoldForMenu { if hasMenu { showingMenu = true } }
+        .menuSheet(isPresented: $showingMenu) {
+            MenuSheet(action.text) {
+                MenuGroup {
+                    if let onEdit {
+                        MenuRow("Edit or assign", subtitle: "What, who and by when", systemImage: "person.crop.circle.badge.plus", action: onEdit)
+                    }
+                    if let onMakeDecision {
+                        MenuRow("It's a decision", subtitle: "Something agreed, not something to do", systemImage: "signpost.right") {
+                            withAnimation(.snappy) { onMakeDecision() }
+                        }
+                    }
+                    if let onShowSource {
+                        MenuRow("Show source", subtitle: "Where it was said in the transcript", systemImage: "quote.opening", action: onShowSource)
+                    }
                 }
-            }
-            if let onEdit {
-                Button(action: onEdit) {
-                    Label("Edit or assign…", systemImage: "person.crop.circle.badge.plus")
-                }
-            }
-            if let onMakeDecision {
-                Button {
-                    withAnimation(.snappy) { onMakeDecision() }
-                } label: {
-                    Label("Make it a decision", systemImage: "signpost.right")
-                }
-            }
-        }
-    }
-
-    /// "It's a decision", "Edit or assign" and "Show source", for the ⋯ button.
-    @ViewBuilder
-    private var moreActions: some View {
-        if let onMakeDecision {
-            Button {
-                withAnimation(.snappy) { onMakeDecision() }
-            } label: {
-                Label("It's a decision", systemImage: "signpost.right")
-            }
-        }
-        if let onEdit {
-            Button(action: onEdit) {
-                Label("Edit or assign", systemImage: "person.crop.circle.badge.plus")
-            }
-        }
-        if let onShowSource {
-            Button(action: onShowSource) {
-                Label("Show source", systemImage: "quote.opening")
             }
         }
     }

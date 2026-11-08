@@ -23,6 +23,7 @@ struct RecordingView: View {
     @State private var pane: Pane = .transcript
     @State private var errorMessage: String?
     @State private var confirmDiscard = false
+    @State private var choosingPeopleCount = false
     @State private var isFinishing = false
     @State private var showLastTime = false
     /// How many people are in the meeting, if the user says. Optional: Auto works it out.
@@ -112,13 +113,36 @@ struct RecordingView: View {
             }
             Button("Cancel", role: .cancel) { newPersonName = "" }
         }
-        .confirmationDialog(kind == .voiceNote ? "Discard this voice note?" : "Discard this meeting?", isPresented: $confirmDiscard, titleVisibility: .visible) {
-            Button("Discard", role: .destructive) {
-                recorder.discard()
-                dismiss()
+        .menuSheet(isPresented: $confirmDiscard) {
+            MenuSheet(
+                kind == .voiceNote ? "Discard this voice note?" : "Discard this meeting?",
+                message: "The transcript and your notes will be deleted."
+            ) {
+                MenuGroup {
+                    MenuRow("Discard", systemImage: "trash", role: .destructive) {
+                        recorder.discard()
+                        dismiss()
+                    }
+                }
+                MenuCancelButton()
             }
-        } message: {
-            Text("The transcript and your notes will be deleted.")
+        }
+        .menuSheet(isPresented: $choosingPeopleCount) {
+            MenuSheet(
+                "How many people are speaking?",
+                message: "Optional. A known number helps tell the voices apart afterwards; it doesn't change the words."
+            ) {
+                MenuGroup {
+                    MenuRow("Auto", subtitle: "Clear Notes works it out", isSelected: peopleCount == nil) {
+                        peopleCount = nil
+                    }
+                    ForEach(2...8, id: \.self) { count in
+                        MenuRow("\(count) people", isSelected: peopleCount == count) {
+                            peopleCount = count
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -164,17 +188,8 @@ struct RecordingView: View {
     /// Optional and never in the way: how many people are speaking. A known number helps tell the
     /// voices apart afterwards; it doesn't change the words. Can be set any time before Stop.
     private var peopleMenu: some View {
-        Menu {
-            Section("How many people are speaking? It helps tell voices apart.") {
-                Picker("People", selection: $peopleCount) {
-                    Text("Auto").tag(Int?.none)
-                    ForEach(2...8, id: \.self) { count in
-                        Text("\(count) people").tag(Int?.some(count))
-                    }
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-            }
+        Button {
+            choosingPeopleCount = true
         } label: {
             Group {
                 if let peopleCount {
@@ -194,6 +209,7 @@ struct RecordingView: View {
             .frame(width: 40, height: 40)
             .panel(in: Circle())
         }
+        .buttonStyle(.plain)
         .disabled(isFinishing)
         .accessibilityLabel("People in the meeting")
         .accessibilityValue(peopleCount.map { "\($0) people" } ?? "Auto")

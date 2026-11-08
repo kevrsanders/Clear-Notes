@@ -38,6 +38,8 @@ struct MeetingsListView: View {
     @State private var lastTimeMeeting: Meeting?
     /// Opened after the Last time sheet closes, when the user asks for the full meeting.
     @State private var openAfterSheet: Meeting?
+    /// The meeting held down, whose menu is showing.
+    @State private var menuMeeting: Meeting?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -98,6 +100,14 @@ struct MeetingsListView: View {
                 withAnimation(.snappy) { undo.dismiss() }
             }
             .navigationDestination(for: Meeting.self) { MeetingDetailView(meeting: $0) }
+            .menuSheet(item: $menuMeeting) { meeting in
+                MenuSheet(meeting.title) {
+                    DeleteChoices(
+                        onMoveToRecentlyDeleted: { delete(meeting) },
+                        onDeletePermanently: { deleteForGood(meeting) }
+                    )
+                }
+            }
             .navigationDestination(isPresented: $showCalendar) { MeetingsCalendarView() }
             // A meeting just imported from a shared file.
             .onReceive(NotificationCenter.default.publisher(for: .openMeeting)) { note in
@@ -286,18 +296,15 @@ struct MeetingsListView: View {
     }
 
     private func card(for meeting: Meeting) -> some View {
-        NavigationLink(value: meeting) {
-            MeetingCard(meeting: meeting)
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            // Both ways to delete, right in the menu: Recently deleted for a week, or gone for
-            // good now.
-            DeleteChoices(
-                onMoveToRecentlyDeleted: { delete(meeting) },
-                onDeletePermanently: { deleteForGood(meeting) }
-            )
-        }
+        // Tap to open, hold for its menu. Not a NavigationLink: a link would also open the
+        // meeting when the finger lifts after holding.
+        MeetingCard(meeting: meeting)
+            .contentShape(Rectangle())
+            .onTapGesture { path.append(meeting) }
+            .onHoldForMenu { menuMeeting = meeting }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { path.append(meeting) }
     }
 
     private func delete(_ meeting: Meeting) {

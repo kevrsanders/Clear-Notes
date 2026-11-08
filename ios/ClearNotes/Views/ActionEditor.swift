@@ -95,8 +95,13 @@ struct ActionEditor: View {
                         .disabled(trimmedText.isEmpty)
                 }
             }
-            .confirmationDialog("Delete this action?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Delete", role: .destructive, action: delete)
+            .menuSheet(isPresented: $confirmDelete) {
+                MenuSheet("Delete this action?") {
+                    MenuGroup {
+                        MenuRow("Delete", systemImage: "trash", role: .destructive, action: delete)
+                    }
+                    MenuCancelButton()
+                }
             }
         }
     }

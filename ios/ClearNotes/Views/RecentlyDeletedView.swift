@@ -26,25 +26,26 @@ final class DeletionUndo {
     }
 }
 
-/// The two ways to delete a meeting, as items in a menu: straight in the menu rather than a
-/// submenu, which iOS stacks on top of the menu it opened from. Each says what it does.
+/// The two ways to delete a meeting, on one card of a menu sheet. Each says what it does.
 struct DeleteChoices: View {
     var onMoveToRecentlyDeleted: () -> Void
     var onDeletePermanently: () -> Void
 
     var body: some View {
-        Section {
-            // In a menu, a second Text is the item's subtitle and an Image its icon.
-            Button(action: onMoveToRecentlyDeleted) {
-                Text("Move to Recently deleted")
-                Text("You can restore it for 7 days")
-                Image(systemName: "trash")
-            }
-            Button(role: .destructive, action: onDeletePermanently) {
-                Text("Delete permanently")
-                Text("Recording and all. Can't be undone")
-                Image(systemName: "trash.slash")
-            }
+        MenuGroup {
+            MenuRow(
+                "Move to Recently deleted",
+                subtitle: "You can restore it for 7 days",
+                systemImage: "trash",
+                action: onMoveToRecentlyDeleted
+            )
+            MenuRow(
+                "Delete permanently",
+                subtitle: "Recording and all. Can't be undone",
+                systemImage: "trash.slash",
+                role: .destructive,
+                action: onDeletePermanently
+            )
         }
     }
 }
@@ -78,6 +79,8 @@ struct RecentlyDeletedView: View {
     @Environment(\.modelContext) private var context
     @Query(filter: #Predicate<Meeting> { $0.deletedAt != nil }) private var deleted: [Meeting]
     @State private var confirmEmpty = false
+    /// The meeting whose "Delete now" was tapped.
+    @State private var deletingNow: Meeting?
 
     private var newestFirst: [Meeting] {
         deleted.sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
@@ -116,20 +119,36 @@ struct RecentlyDeletedView: View {
                 }
             }
         }
-        .confirmationDialog(
-            deleted.count == 1 ? "Delete this meeting for good?" : "Delete all \(deleted.count) for good?",
-            isPresented: $confirmEmpty,
-            titleVisibility: .visible
-        ) {
-            Button("Delete for good", role: .destructive) {
-                let all = deleted
-                withAnimation(.snappy) {
-                    for meeting in all { RecentlyDeleted.deleteForGood(meeting, in: context) }
+        .menuSheet(isPresented: $confirmEmpty) {
+            MenuSheet(
+                deleted.count == 1 ? "Delete this meeting for good?" : "Delete all \(deleted.count) for good?",
+                message: "Recordings, transcripts, notes and actions are deleted from this iPhone. This can't be undone."
+            ) {
+                MenuGroup {
+                    MenuRow("Delete for good", systemImage: "trash.slash", role: .destructive) {
+                        let all = deleted
+                        withAnimation(.snappy) {
+                            for meeting in all { RecentlyDeleted.deleteForGood(meeting, in: context) }
+                        }
+                    }
                 }
+                MenuCancelButton()
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Recordings, transcripts, notes and actions are deleted from this iPhone. This can't be undone.")
+        }
+        .menuSheet(item: $deletingNow) { meeting in
+            MenuSheet(meeting.title) {
+                MenuGroup {
+                    MenuRow(
+                        "Delete for good",
+                        subtitle: "Recording and all. Can't be undone",
+                        systemImage: "trash.slash",
+                        role: .destructive
+                    ) {
+                        withAnimation(.snappy) { RecentlyDeleted.deleteForGood(meeting, in: context) }
+                    }
+                }
+                MenuCancelButton()
+            }
         }
         .task { RecentlyDeleted.purgeExpired(in: context) }
     }
@@ -155,18 +174,11 @@ struct RecentlyDeletedView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
-                // Opens right here, on the button, rather than at the bottom of the screen.
-                Menu {
-                    Button(role: .destructive) {
-                        withAnimation(.snappy) { RecentlyDeleted.deleteForGood(meeting, in: context) }
-                    } label: {
-                        Text("Delete for good")
-                        Text("Recording and all. Can't be undone")
-                        Image(systemName: "trash.slash")
-                    }
+                Button {
+                    deletingNow = meeting
                 } label: {
                     Text("Delete now")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.danger)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))

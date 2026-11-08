@@ -52,10 +52,16 @@ struct MinutesPane: View {
         .sheet(isPresented: $editing) {
             MinutesEditor(text: meeting.minutes) { meeting.minutes = $0 }
         }
-        .confirmationDialog("Rewrite the minutes?", isPresented: $confirmRewrite, titleVisibility: .visible) {
-            Button("Rewrite minutes") { jobs.write(meeting) }
-        } message: {
-            Text("They're written again from the transcript, decisions and accepted actions. Changes you've made to them will be replaced.")
+        .menuSheet(isPresented: $confirmRewrite) {
+            MenuSheet(
+                "Rewrite the minutes?",
+                message: "They're written again from the transcript, decisions and accepted actions. Changes you've made to them will be replaced."
+            ) {
+                MenuGroup {
+                    MenuRow("Rewrite minutes", systemImage: "arrow.clockwise") { jobs.write(meeting) }
+                }
+                MenuCancelButton()
+            }
         }
     }
 
@@ -133,19 +139,15 @@ struct MinutesPane: View {
             }
             .buttonStyle(PrimaryButtonStyle(compact: true))
             Spacer(minLength: 0)
-            Menu {
-                Button {
-                    confirmRewrite = true
-                } label: {
-                    Label("Rewrite minutes", systemImage: "arrow.clockwise")
-                }
+            Button {
+                confirmRewrite = true
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel("More")
+            .accessibilityLabel("Rewrite minutes")
         }
     }
 

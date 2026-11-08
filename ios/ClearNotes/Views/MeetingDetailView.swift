@@ -58,6 +58,21 @@ struct MeetingDetailView: View {
     /// "Someone else…" when saying who a catch-up was with.
     @State private var addingPerson = false
     @State private var newPersonName = ""
+    /// Menus, each a menu sheet: Share and ⋯ in the toolbar, who a catch-up was with, and the
+    /// action, decision or transcript line held down.
+    @State private var showingShare = false
+    @State private var showingMore = false
+    @State private var choosingCatchUpPerson = false
+    @State private var actionMenu: ActionItem?
+    @State private var decisionMenu: HeldDecision?
+    @State private var lineMenu: TranscriptSegment?
+
+    /// A decision held down, by its place in the list.
+    private struct HeldDecision: Identifiable {
+        let index: Int
+        let text: String
+        var id: Int { index }
+    }
 
     /// The last meeting in this meeting's series (or the last catch-up with the same person).
     private var previousMeeting: Meeting? {
@@ -115,6 +130,10 @@ struct MeetingDetailView: View {
     private var sortedActions: [ActionItem] { meeting.actions.sorted { $0.createdAt < $1.createdAt } }
 
     var body: some View {
+        menuSheets(page)
+    }
+
+    private var page: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -193,25 +212,6 @@ struct MeetingDetailView: View {
             }
         }
         .onDisappear { playback.stop() }
-        .confirmationDialog("How many people spoke?", isPresented: $choosingSpeakerCount, titleVisibility: .visible) {
-            ForEach(2...8, id: \.self) { count in
-                Button("\(count) people") {
-                    Task { await MeetingProcessor.reidentifySpeakers(in: meeting, count: count) }
-                }
-            }
-        } message: {
-            Text("Clear Notes listens to the recording again and regroups the voices. Names are kept where a voice matches one you've named; any new voices need naming.")
-        }
-        .confirmationDialog("Improve the transcript?", isPresented: $confirmImproveTranscript, titleVisibility: .visible) {
-            Button("Improve transcript") {
-                Task {
-                    let improved = await MeetingProcessor.improveTranscript(of: meeting)
-                    if !improved { improveFailed = true }
-                }
-            }
-        } message: {
-            Text("Transcribes the recording again with the more accurate model on this iPhone. Speaker names are kept; any lines you edited are replaced.")
-        }
         .alert("The transcript couldn't be improved", isPresented: $improveFailed) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -220,59 +220,15 @@ struct MeetingDetailView: View {
         .sheet(isPresented: $sharingFile) {
             ShareMeetingSheet(meeting: meeting)
         }
-        .confirmationDialog(
-            bulkReview == .dismissAll ? "Dismiss all \(toReview.count) suggestions?" : "Accept all \(toReview.count) suggestions?",
-            isPresented: Binding(get: { bulkReview != nil }, set: { if !$0 { bulkReview = nil } }),
-            titleVisibility: .visible,
-            presenting: bulkReview
-        ) { review in
-            switch review {
-            case .acceptAll:
-                Button("Accept all") { withAnimation(.snappy) { meeting.reviewAllSuggestions(accept: true) } }
-            case .dismissAll:
-                Button("Dismiss all", role: .destructive) { withAnimation(.snappy) { meeting.reviewAllSuggestions(accept: false) } }
-            }
-        } message: { review in
-            Text(review == .acceptAll
-                 ? "They become open actions. You can still edit, reassign or tick them off one by one."
-                 : "They're removed from the list. Actions you've accepted or marked aren't affected.")
-        }
         .sheet(item: $editingAction) { action in
             ActionEditor(action: action, people: (action.meeting ?? meeting).assignablePeople(myName: myName))
                 .presentationDetents([.large])
-        }
-        // A dialog rather than a submenu: it stays put while the transcript redraws (e.g. during playback).
-        .confirmationDialog(
-            reassigning.map { $0.segmentIDs.count == 1 ? "Who said this line?" : "Who said these \($0.segmentIDs.count) lines?" } ?? "",
-            isPresented: Binding(get: { reassigning != nil }, set: { if !$0 { reassigning = nil } }),
-            titleVisibility: .visible,
-            presenting: reassigning
-        ) { request in
-            ForEach(speakerChoices(for: request)) { speaker in
-                Button(speaker.displayName) { reassign(request, to: speaker.id) }
-            }
-            Button("New speaker") {
-                let speaker = meeting.addSpeaker()
-                reassign(request, to: speaker.id)
-            }
-            Button("Cancel", role: .cancel) {}
         }
         .onChange(of: pane) { _, _ in endSelecting() }
         // A different type has different tabs, so start again from the first.
         .onChange(of: meeting.kindRaw) { _, _ in
             showMinutes = false
             withAnimation(.snappy) { pane = .overview }
-        }
-        .confirmationDialog("Which diary meeting was it?", isPresented: $choosingDiaryEvent, titleVisibility: .visible) {
-            ForEach(diaryChoices) { event in
-                Button("\(event.title.isEmpty ? "Calendar event" : event.title) · \(event.timeRange)") {
-                    withAnimation(.snappy) { meeting.link(to: event) }
-                    try? context.save()
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("It takes the meeting's title and who was invited, and shows as recorded in your diary.")
         }
         .alert("No diary meetings that day", isPresented: $noDiaryEvents) {
             Button("OK", role: .cancel) {}
@@ -295,14 +251,6 @@ struct MeetingDetailView: View {
             }
             .presentationDetents([.medium])
             .presentationCornerRadius(32)
-        }
-        .confirmationDialog("Remove the audio?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
-            Button("Remove the audio", role: .destructive) {
-                playback.unload()
-                meeting.deleteAudio()
-            }
-        } message: {
-            Text("The transcript and notes are kept. Only the audio is deleted.")
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
@@ -423,14 +371,8 @@ struct MeetingDetailView: View {
 
     /// Who a catch-up was with, which can be changed (e.g. when it wasn't picked while recording).
     private var catchUpPersonMenu: some View {
-        Menu {
-            ForEach(RecentPeople.list(from: allMeetings, me: myName), id: \.self) { name in
-                Button(name) { withAnimation(.snappy) { meeting.setCatchUpPerson(name) } }
-            }
-            Button("Someone else…") { addingPerson = true }
-            if meeting.catchUpPerson != nil {
-                Button("Nobody in particular") { withAnimation(.snappy) { meeting.setCatchUpPerson(nil) } }
-            }
+        Button {
+            choosingCatchUpPerson = true
         } label: {
             HStack(spacing: 4) {
                 Text(meeting.catchUpPerson.map { "With \($0)" } ?? "Who was this with?")
@@ -440,6 +382,7 @@ struct MeetingDetailView: View {
             .font(.footnote.weight(.semibold))
             .foregroundStyle(Theme.catchUp)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(meeting.catchUpPerson.map { "With \($0). Change" } ?? "Who was this with?")
     }
 
@@ -461,91 +404,304 @@ struct MeetingDetailView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Menu {
-                Button {
-                    sharingFile = true
-                } label: {
-                    Label("Share meeting with a Clear Notes user", systemImage: "square.and.arrow.up.on.square")
-                }
-                ShareLink(item: MarkdownExporter.markdown(for: meeting)) {
-                    Label("Share as text", systemImage: "text.alignleft")
-                }
+            Button {
+                showingShare = true
             } label: {
                 Image(systemName: "square.and.arrow.up")
             }
             .accessibilityLabel("Share")
-            Menu {
-                Button {
-                    UIPasteboard.general.string = MarkdownExporter.markdown(for: meeting)
-                } label: {
-                    Label("Copy as text", systemImage: "doc.on.doc")
-                }
-                Button {
-                    draftTitle = meeting.title
-                    isRenaming = true
-                } label: {
-                    Label("Rename", systemImage: "pencil")
-                }
-                Menu {
-                    Picker("Type", selection: Binding(
-                        get: { meeting.kind },
-                        set: { newKind in withAnimation(.snappy) { meeting.changeKind(to: newKind) } }
-                    )) {
-                        ForEach(MeetingKind.allCases) { kind in
-                            Label(kind.title, systemImage: kind.systemImage).tag(kind)
-                        }
-                    }
-                } label: {
-                    Label("Change type", systemImage: meeting.kind.systemImage)
-                }
-                if useCalendar {
-                    Button {
-                        findDiaryEvents()
-                    } label: {
-                        Label(meeting.isFromDiary ? "Link to a different diary meeting" : "Link to a diary meeting", systemImage: "calendar")
-                    }
-                }
-                if meeting.kind == .catchUp, !showsMinutes {
-                    Button {
-                        showMinutes = true
-                        withAnimation(.snappy) { pane = .minutes }
-                    } label: {
-                        Label("Write minutes", systemImage: "doc.plaintext")
-                    }
-                }
-                Button {
-                    Task { await MeetingProcessor.process(meeting) }
-                } label: {
-                    Label("Regenerate notes", systemImage: "sparkles")
-                }
-                .disabled(meeting.processingState == .processing)
-                if AccurateTranscriber.isReady && meeting.playableAudioURL != nil {
-                    Button {
-                        confirmImproveTranscript = true
-                    } label: {
-                        Label("Improve transcript", systemImage: "text.badge.checkmark")
-                    }
-                    .disabled(meeting.processingState == .processing)
-                }
-                // Not a way to delete the meeting, so it sits with the other actions, not in red.
-                if meeting.audioFileName != nil {
-                    Button {
-                        confirmDeleteAudio = true
-                    } label: {
-                        Text("Remove the audio")
-                        Text("Keeps the transcript and notes")
-                        Image(systemName: "waveform.slash")
-                    }
-                }
-                Divider()
-                DeleteChoices(
-                    onMoveToRecentlyDeleted: moveToRecentlyDeleted,
-                    onDeletePermanently: deletePermanently
-                )
+            Button {
+                showingMore = true
             } label: {
                 Image(systemName: "ellipsis")
             }
             .accessibilityLabel("More")
+        }
+    }
+
+    // MARK: - Menus
+
+    /// Every menu and confirmation on this screen, each a menu sheet.
+    private func menuSheets(_ content: some View) -> some View {
+        content
+            .menuSheet(isPresented: $showingShare) { shareMenu }
+            .menuSheet(isPresented: $showingMore) { moreMenu }
+            .menuSheet(isPresented: $choosingCatchUpPerson) { catchUpPersonSheet }
+            .menuSheet(item: $actionMenu) { actionMenuSheet($0) }
+            .menuSheet(item: $decisionMenu) { decisionMenuSheet($0) }
+            .menuSheet(item: $lineMenu) { lineMenuSheet($0) }
+            .menuSheet(item: $reassigning) { reassignSheet($0) }
+            .menuSheet(item: $bulkReview) { bulkReviewSheet($0) }
+            .menuSheet(isPresented: $choosingSpeakerCount) { speakerCountSheet }
+            .menuSheet(isPresented: $choosingDiaryEvent) { diaryEventSheet }
+            .menuSheet(isPresented: $confirmImproveTranscript) { improveTranscriptSheet }
+            .menuSheet(isPresented: $confirmDeleteAudio) { removeAudioSheet }
+    }
+
+    private var shareMenu: some View {
+        MenuSheet("Share") {
+            MenuGroup {
+                MenuRow(
+                    "Share with a Clear Notes user",
+                    subtitle: "The whole meeting, as a file they open in Clear Notes",
+                    systemImage: "square.and.arrow.up.on.square"
+                ) {
+                    sharingFile = true
+                }
+                MenuRow("Share as text", subtitle: "The notes, to any app", systemImage: "text.alignleft") {
+                    SystemShare.present([MarkdownExporter.markdown(for: meeting)])
+                }
+            }
+        }
+    }
+
+    private var moreMenu: some View {
+        MenuSheet(meeting.title) {
+            MenuGroup {
+                MenuRow("Copy as text", systemImage: "doc.on.doc") {
+                    UIPasteboard.general.string = MarkdownExporter.markdown(for: meeting)
+                }
+                MenuRow("Rename", systemImage: "pencil") {
+                    draftTitle = meeting.title
+                    isRenaming = true
+                }
+                if useCalendar {
+                    MenuRow(meeting.isFromDiary ? "Link to a different diary meeting" : "Link to a diary meeting", systemImage: "calendar") {
+                        findDiaryEvents()
+                    }
+                }
+            }
+            MenuGroup {
+                MenuChips(
+                    title: "Type",
+                    systemImage: meeting.kind.systemImage,
+                    options: MeetingKind.allCases,
+                    selection: meeting.kind,
+                    label: { $0.title },
+                    onSelect: { newKind in
+                        withAnimation(.snappy) { meeting.changeKind(to: newKind) }
+                    }
+                )
+            }
+            MenuGroup {
+                if meeting.kind == .catchUp, !showsMinutes {
+                    MenuRow("Write minutes", systemImage: "doc.plaintext") {
+                        showMinutes = true
+                        withAnimation(.snappy) { pane = .minutes }
+                    }
+                }
+                MenuRow("Regenerate notes", systemImage: "sparkles") {
+                    Task { await MeetingProcessor.process(meeting) }
+                }
+                .disabled(meeting.processingState == .processing)
+                if AccurateTranscriber.isReady && meeting.playableAudioURL != nil {
+                    MenuRow("Improve transcript", systemImage: "text.badge.checkmark") {
+                        confirmImproveTranscript = true
+                    }
+                    .disabled(meeting.processingState == .processing)
+                }
+                // Not a way to delete the meeting, so it sits here, not in red with the deletes.
+                if meeting.audioFileName != nil {
+                    MenuRow("Remove the audio", subtitle: "Keeps the transcript and notes", systemImage: "waveform.slash") {
+                        confirmDeleteAudio = true
+                    }
+                }
+            }
+            DeleteChoices(
+                onMoveToRecentlyDeleted: moveToRecentlyDeleted,
+                onDeletePermanently: deletePermanently
+            )
+        }
+    }
+
+    private var catchUpPersonSheet: some View {
+        MenuSheet("Who was this with?") {
+            let people = RecentPeople.list(from: allMeetings, me: myName)
+            if !people.isEmpty {
+                MenuGroup {
+                    ForEach(people, id: \.self) { name in
+                        MenuRow(name, systemImage: "person", isSelected: meeting.catchUpPerson == name) {
+                            withAnimation(.snappy) { meeting.setCatchUpPerson(name) }
+                        }
+                    }
+                }
+            }
+            MenuGroup {
+                MenuRow("Someone else…", systemImage: "person.badge.plus") {
+                    addingPerson = true
+                }
+                if meeting.catchUpPerson != nil {
+                    MenuRow("Nobody in particular", systemImage: "person.slash") {
+                        withAnimation(.snappy) { meeting.setCatchUpPerson(nil) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func actionMenuSheet(_ action: ActionItem) -> some View {
+        MenuSheet(action.text) {
+            MenuGroup {
+                MenuRow("Edit", systemImage: "pencil") {
+                    editingAction = action
+                }
+                MenuRow("Delete", systemImage: "trash", role: .destructive) {
+                    withAnimation(.snappy) {
+                        meeting.actions.removeAll { $0.persistentModelID == action.persistentModelID }
+                        context.delete(action)
+                        try? context.save()
+                    }
+                }
+            }
+        }
+    }
+
+    private func decisionMenuSheet(_ held: HeldDecision) -> some View {
+        MenuSheet(held.text) {
+            MenuGroup {
+                MenuRow("Make it an action", subtitle: "Something to do, not just agreed", systemImage: "checklist") {
+                    withAnimation(.snappy) { meeting.makeAction(fromDecisionAt: held.index) }
+                }
+            }
+        }
+    }
+
+    private func lineMenuSheet(_ segment: TranscriptSegment) -> some View {
+        MenuSheet(message: segment.text.count > 160 ? String(segment.text.prefix(160)) + "…" : segment.text) {
+            if let playHandler {
+                MenuGroup {
+                    MenuRow("Play this line", systemImage: "play.fill") {
+                        playHandler(segment.start, segment.end)
+                    }
+                    MenuRow("Play from here", systemImage: "forward.fill") {
+                        playHandler(segment.start, nil)
+                    }
+                }
+            }
+            if !meeting.speakers.isEmpty {
+                MenuGroup {
+                    MenuRow("Change speaker", systemImage: "person.crop.circle.badge.questionmark") {
+                        pausePlayback()
+                        reassigning = ReassignRequest(segmentIDs: [segment.id])
+                    }
+                    MenuRow("Select lines", subtitle: "To change the speaker of several at once", systemImage: "checkmark.circle") {
+                        startSelecting(segment.id)
+                    }
+                }
+            }
+            MenuGroup {
+                MenuRow("Copy", systemImage: "doc.on.doc") {
+                    UIPasteboard.general.string = segment.text
+                }
+                MenuRow("Edit text", systemImage: "pencil") {
+                    editingSegment = segment
+                }
+            }
+        }
+    }
+
+    private func reassignSheet(_ request: ReassignRequest) -> some View {
+        MenuSheet(request.segmentIDs.count == 1 ? "Who said this line?" : "Who said these \(request.segmentIDs.count) lines?") {
+            MenuGroup {
+                ForEach(speakerChoices(for: request)) { speaker in
+                    MenuRow(speaker.displayName, systemImage: "person") {
+                        reassign(request, to: speaker.id)
+                    }
+                }
+                MenuRow("New speaker", systemImage: "person.badge.plus") {
+                    let speaker = meeting.addSpeaker()
+                    reassign(request, to: speaker.id)
+                }
+            }
+            MenuCancelButton()
+        }
+    }
+
+    private func bulkReviewSheet(_ review: BulkReview) -> some View {
+        MenuSheet(
+            review == .dismissAll ? "Dismiss all \(toReview.count) suggestions?" : "Accept all \(toReview.count) suggestions?",
+            message: review == .acceptAll
+                ? "They become open actions. You can still edit, reassign or tick them off one by one."
+                : "They're removed from the list. Actions you've accepted or marked aren't affected."
+        ) {
+            MenuGroup {
+                switch review {
+                case .acceptAll:
+                    MenuRow("Accept all", systemImage: "checkmark") {
+                        withAnimation(.snappy) { meeting.reviewAllSuggestions(accept: true) }
+                    }
+                case .dismissAll:
+                    MenuRow("Dismiss all", systemImage: "xmark", role: .destructive) {
+                        withAnimation(.snappy) { meeting.reviewAllSuggestions(accept: false) }
+                    }
+                }
+            }
+            MenuCancelButton()
+        }
+    }
+
+    private var speakerCountSheet: some View {
+        MenuSheet(
+            "How many people spoke?",
+            message: "Clear Notes listens to the recording again and regroups the voices. Names are kept where a voice matches one you've named; any new voices need naming."
+        ) {
+            MenuGroup {
+                ForEach(2...8, id: \.self) { count in
+                    MenuRow("\(count) people", isSelected: meeting.speakers.count == count) {
+                        Task { await MeetingProcessor.reidentifySpeakers(in: meeting, count: count) }
+                    }
+                }
+            }
+        }
+    }
+
+    private var diaryEventSheet: some View {
+        MenuSheet(
+            "Which diary meeting was it?",
+            message: "It takes the meeting's title and who was invited, and shows as recorded in your diary."
+        ) {
+            MenuGroup {
+                ForEach(diaryChoices) { event in
+                    MenuRow(
+                        event.title.isEmpty ? "Calendar event" : event.title,
+                        subtitle: event.timeRange,
+                        systemImage: "calendar",
+                        isSelected: meeting.calendarEventID == event.id
+                    ) {
+                        withAnimation(.snappy) { meeting.link(to: event) }
+                        try? context.save()
+                    }
+                }
+            }
+        }
+    }
+
+    private var improveTranscriptSheet: some View {
+        MenuSheet(
+            "Improve the transcript?",
+            message: "Transcribes the recording again with the more accurate model on this iPhone. Speaker names are kept; any lines you edited are replaced."
+        ) {
+            MenuGroup {
+                MenuRow("Improve transcript", systemImage: "text.badge.checkmark") {
+                    Task {
+                        let improved = await MeetingProcessor.improveTranscript(of: meeting)
+                        if !improved { improveFailed = true }
+                    }
+                }
+            }
+            MenuCancelButton()
+        }
+    }
+
+    private var removeAudioSheet: some View {
+        MenuSheet("Remove the audio?", message: "The transcript and notes are kept. Only the audio is deleted.") {
+            MenuGroup {
+                MenuRow("Remove the audio", systemImage: "waveform.slash", role: .destructive) {
+                    playback.unload()
+                    meeting.deleteAudio()
+                }
+            }
+            MenuCancelButton()
         }
     }
 
@@ -903,22 +1059,7 @@ struct MeetingDetailView: View {
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .onTapGesture { editingAction = action }
-        .contextMenu {
-            Button {
-                editingAction = action
-            } label: {
-                Label("Edit", systemImage: "pencil")
-            }
-            Button(role: .destructive) {
-                withAnimation(.snappy) {
-                    meeting.actions.removeAll { $0.persistentModelID == action.persistentModelID }
-                    context.delete(action)
-                    try? context.save()
-                }
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-        }
+        .onHoldForMenu { actionMenu = action }
     }
 
     /// The user's own notes, on the same page for catch-ups and voice notes.
@@ -996,13 +1137,7 @@ struct MeetingDetailView: View {
                             Spacer(minLength: 0)
                         }
                         .contentShape(Rectangle())
-                        .contextMenu {
-                            Button {
-                                withAnimation(.snappy) { meeting.makeAction(fromDecisionAt: index) }
-                            } label: {
-                                Label("Make it an action", systemImage: "checklist")
-                            }
-                        }
+                        .onHoldForMenu { decisionMenu = HeldDecision(index: index, text: decision) }
                     }
                     Text("Hold a decision to make it an action.")
                         .font(.caption)
@@ -1228,7 +1363,6 @@ struct MeetingDetailView: View {
                     turn: turn,
                     speaker: meeting.speaker(withID: turn.speakerID),
                     showsAvatars: !meeting.speakers.isEmpty,
-                    canChangeSpeaker: !meeting.speakers.isEmpty,
                     // Only what concerns this turn, so the other turns don't redraw during playback.
                     highlightedSegment: highlightedSegment.flatMap { ids.contains($0) ? $0 : nil },
                     playingSegment: playing.flatMap { ids.contains($0) ? $0 : nil },
@@ -1237,14 +1371,9 @@ struct MeetingDetailView: View {
                     selected: selectedLines.intersection(ids),
                     canPlay: playHandler != nil,
                     onName: { namingSpeaker = $0 },
-                    onChangeSpeaker: { segmentID in
-                        pausePlayback()
-                        reassigning = ReassignRequest(segmentIDs: [segmentID])
-                    },
-                    onStartSelecting: { startSelecting($0) },
                     onToggle: { toggleLine($0) },
                     onSelectThrough: { selectThrough($0) },
-                    onEdit: { editingSegment = $0 },
+                    onHold: { lineMenu = $0 },
                     onPlay: playHandler
                 )
                 .equatable()
@@ -1374,7 +1503,6 @@ struct MeetingDetailView: View {
         var turn: Turn
         var speaker: Speaker?
         var showsAvatars: Bool
-        var canChangeSpeaker: Bool
         var highlightedSegment: UUID?
         var playingSegment: UUID?
         var sourceCounts: [UUID: Int]
@@ -1382,11 +1510,10 @@ struct MeetingDetailView: View {
         var selected: Set<UUID>
         var canPlay: Bool
         var onName: (Speaker) -> Void
-        var onChangeSpeaker: (UUID) -> Void
-        var onStartSelecting: (UUID) -> Void
         var onToggle: (UUID) -> Void
         var onSelectThrough: (UUID) -> Void
-        var onEdit: (TranscriptSegment) -> Void
+        /// Opens the menu for a line held down.
+        var onHold: (TranscriptSegment) -> Void
         /// Plays the recording between two times, when the recording is kept.
         var onPlay: ((TimeInterval, TimeInterval?) -> Void)?
 
@@ -1394,7 +1521,6 @@ struct MeetingDetailView: View {
             lhs.turn.segments == rhs.turn.segments
                 && lhs.speaker == rhs.speaker
                 && lhs.showsAvatars == rhs.showsAvatars
-                && lhs.canChangeSpeaker == rhs.canChangeSpeaker
                 && lhs.highlightedSegment == rhs.highlightedSegment
                 && lhs.playingSegment == rhs.playingSegment
                 && lhs.sourceCounts == rhs.sourceCounts
@@ -1446,42 +1572,7 @@ struct MeetingDetailView: View {
                 selectableLine(segment)
             } else {
                 line(segment)
-                    .contextMenu {
-                        if canPlay, let onPlay {
-                            Button {
-                                onPlay(segment.start, segment.end)
-                            } label: {
-                                Label("Play this line", systemImage: "play.fill")
-                            }
-                            Button {
-                                onPlay(segment.start, nil)
-                            } label: {
-                                Label("Play from here", systemImage: "forward.fill")
-                            }
-                        }
-                        if canChangeSpeaker {
-                            Button {
-                                onChangeSpeaker(segment.id)
-                            } label: {
-                                Label("Change speaker…", systemImage: "person.crop.circle.badge.questionmark")
-                            }
-                            Button {
-                                onStartSelecting(segment.id)
-                            } label: {
-                                Label("Select lines…", systemImage: "checkmark.circle")
-                            }
-                        }
-                        Button {
-                            UIPasteboard.general.string = segment.text
-                        } label: {
-                            Label("Copy", systemImage: "doc.on.doc")
-                        }
-                        Button {
-                            onEdit(segment)
-                        } label: {
-                            Label("Edit text", systemImage: "pencil")
-                        }
-                    }
+                    .onHoldForMenu { onHold(segment) }
             }
         }
 

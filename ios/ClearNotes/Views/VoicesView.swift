@@ -42,12 +42,18 @@ struct VoicesView: View {
         }
         .navigationTitle("Voices")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Forget all voices?", isPresented: $confirmDeleteAll, titleVisibility: .visible) {
-            Button("Forget all voices", role: .destructive) {
-                VoiceLibrary.deleteAll(in: context)
+        .menuSheet(isPresented: $confirmDeleteAll) {
+            MenuSheet(
+                "Forget all voices?",
+                message: "Every remembered voice and the voiceprints kept on meetings are deleted. Names already on meetings stay."
+            ) {
+                MenuGroup {
+                    MenuRow("Forget all voices", systemImage: "person.crop.circle.badge.xmark", role: .destructive) {
+                        VoiceLibrary.deleteAll(in: context)
+                    }
+                }
+                MenuCancelButton()
             }
-        } message: {
-            Text("Every remembered voice and the voiceprints kept on meetings are deleted. Names already on meetings stay.")
         }
     }
 }
