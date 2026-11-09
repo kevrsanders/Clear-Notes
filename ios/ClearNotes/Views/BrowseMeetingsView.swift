@@ -82,16 +82,17 @@ struct MeetingCalendar: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UICalendarView {
         let view = UICalendarView()
-        view.calendar = Calendar.current
+        let calendar = Calendar.current
+        view.calendar = calendar
         view.locale = .current
         view.fontDesign = .rounded
         view.tintColor = UIColor(Theme.brand)
         view.delegate = context.coordinator
         let selection = UICalendarSelectionSingleDate(delegate: context.coordinator)
-        selection.selectedDate = selected
+        selection.selectedDate = Self.withCalendar(selected, calendar)
         view.selectionBehavior = selection
-        if let selected, let date = Calendar.current.date(from: selected) {
-            view.visibleDateComponents = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        if let visible = Self.withCalendar(selected, calendar) {
+            view.visibleDateComponents = visible
         }
         context.coordinator.days = meetingDays
         return view
@@ -102,15 +103,25 @@ struct MeetingCalendar: UIViewRepresentable {
         let changed = context.coordinator.days.symmetricDifference(meetingDays)
         if !changed.isEmpty {
             context.coordinator.days = meetingDays
-            view.reloadDecorations(forDateComponents: Array(changed), animated: true)
+            view.reloadDecorations(forDateComponents: changed.compactMap { Self.withCalendar($0, view.calendar) }, animated: true)
         }
         if let selection = view.selectionBehavior as? UICalendarSelectionSingleDate,
            normalized(selection.selectedDate) != selected {
-            selection.setSelected(selected, animated: false)
-            if let selected {
-                view.setVisibleDateComponents(selected, animated: true)
+            selection.setSelected(Self.withCalendar(selected, view.calendar), animated: false)
+            if let visible = Self.withCalendar(selected, view.calendar) {
+                // Not animated before the calendar is on screen.
+                view.setVisibleDateComponents(visible, animated: view.window != nil)
             }
         }
+    }
+
+    /// A day as UIKit wants it from us: year, month and day, carrying the calendar view's own
+    /// calendar. Date components without one can stop the app when they're handed to the view.
+    static func withCalendar(_ components: DateComponents?, _ calendar: Calendar) -> DateComponents? {
+        guard let components, let year = components.year, let month = components.month, let day = components.day else {
+            return nil
+        }
+        return DateComponents(calendar: calendar, year: year, month: month, day: day)
     }
 
     func makeCoordinator() -> Coordinator {
