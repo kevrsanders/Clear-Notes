@@ -15,8 +15,10 @@ struct MeetingsListView: View {
     @AppStorage(SettingsKeys.reminderShowsTitle) private var reminderShowsTitle = false
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var path: [Meeting] = []
-    @State private var showCalendar = false
+    /// Everything opened from here: meetings, and the calendar (`CalendarRoute`). One path for
+    /// both: a separate "show the calendar" switch on a stack driven by a path made SwiftUI loop
+    /// on the navigation bar and freeze until iOS closed the app.
+    @State private var path = NavigationPath()
     @State private var search = ""
     @State private var showConsent = false
     @State private var startAfterConsent = false
@@ -108,13 +110,13 @@ struct MeetingsListView: View {
                     )
                 }
             }
-            .navigationDestination(isPresented: $showCalendar) { MeetingsCalendarView() }
+            .navigationDestination(for: CalendarRoute.self) { _ in MeetingsCalendarView() }
             // A meeting just imported from a shared file.
             .onReceive(NotificationCenter.default.publisher(for: .openMeeting)) { note in
                 guard let id = note.object as? PersistentIdentifier,
                       let meeting = meetings.first(where: { $0.persistentModelID == id })
                 else { return }
-                path = [meeting]
+                path = NavigationPath([meeting])
             }
             .sheet(item: $lastTimeMeeting, onDismiss: {
                 if let meeting = openAfterSheet {
@@ -132,7 +134,7 @@ struct MeetingsListView: View {
             }
             // Record lives in the tab bar (see ContentView), which posts this.
             .onReceive(NotificationCenter.default.publisher(for: .startRecording)) { _ in
-                path = []
+                path = NavigationPath()
                 refreshCalendar()
                 choosingRecording = true
             }
@@ -197,7 +199,7 @@ struct MeetingsListView: View {
                     .tracking(-0.6)
                 Spacer()
                 GlassCircleButton(systemName: "calendar", accessibilityLabel: "Meetings by day") {
-                    showCalendar = true
+                    path.append(CalendarRoute())
                 }
                 if myName.isEmpty {
                     Image(systemName: "person.fill")
@@ -425,7 +427,7 @@ struct MeetingsListView: View {
         guard let eventID = ReminderHandler.pendingEventID else { return }
         ReminderHandler.pendingEventID = nil
         refreshCalendar()
-        path = []
+        path = NavigationPath()
         if let event = todaysEvents.first(where: { $0.id == eventID }) {
             newMeeting(for: event, kind: .meeting)
         } else {
@@ -659,6 +661,9 @@ private struct SearchField: View {
         .panel(in: Capsule())
     }
 }
+
+/// The calendar screen (meetings by day), as a step in the home screen's navigation path.
+struct CalendarRoute: Hashable {}
 
 struct MeetingCard: View {
     let meeting: Meeting

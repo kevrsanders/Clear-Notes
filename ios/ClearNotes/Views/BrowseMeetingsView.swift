@@ -41,9 +41,8 @@ struct MeetingsCalendarView: View {
                             .cardStyle()
                     } else {
                         ForEach(dayMeetings) { meeting in
-                            NavigationLink {
-                                MeetingDetailView(meeting: meeting)
-                            } label: {
+                            // Onto the home screen's path, which opens meetings (MeetingsListView).
+                            NavigationLink(value: meeting) {
                                 MeetingCard(meeting: meeting)
                             }
                             .buttonStyle(.plain)
