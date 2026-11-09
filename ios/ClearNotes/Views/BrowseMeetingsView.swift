@@ -79,7 +79,18 @@ struct MeetingCalendar: UIViewRepresentable {
         calendar.dateComponents([.year, .month, .day], from: date)
     }
 
+    /// A day as one number (20261105), to look days up by. Date components for the same day can
+    /// still differ in fields that don't matter here (such as the leap-month flag), so they
+    /// aren't compared directly.
+    static func key(_ components: DateComponents) -> Int? {
+        guard let year = components.year, let month = components.month, let day = components.day else { return nil }
+        return year * 10_000 + month * 100 + day
+    }
+
     func makeUIView(context: Context) -> UICalendarView {
+        // The days with meetings come first: the calendar can ask for its dots as soon as it has
+        // a delegate, and it keeps the answer.
+        context.coordinator.days = Set(meetingDays.compactMap(Self.key))
         let view = UICalendarView()
         let calendar = Calendar.current
         view.calendar = calendar
@@ -93,16 +104,23 @@ struct MeetingCalendar: UIViewRepresentable {
         if let visible = Self.withCalendar(selected, calendar) {
             view.visibleDateComponents = visible
         }
-        context.coordinator.days = meetingDays
         return view
     }
 
     func updateUIView(_ view: UICalendarView, context: Context) {
-        context.coordinator.parent = self
-        let changed = context.coordinator.days.symmetricDifference(meetingDays)
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        // Every meeting day's dot is asked for again once the calendar is on screen, in case it
+        // was drawn before it knew them; after that, the days whose meetings changed.
+        let changed = coordinator.hasDrawnDots ? coordinator.dayComponents.symmetricDifference(meetingDays) : meetingDays
+        coordinator.days = Set(meetingDays.compactMap(Self.key))
+        coordinator.dayComponents = meetingDays
         if !changed.isEmpty {
-            context.coordinator.days = meetingDays
-            view.reloadDecorations(forDateComponents: changed.compactMap { Self.withCalendar($0, view.calendar) }, animated: true)
+            coordinator.hasDrawnDots = true
+            let dates = changed.compactMap { Self.withCalendar($0, view.calendar) }
+            DispatchQueue.main.async {
+                view.reloadDecorations(forDateComponents: dates, animated: false)
+            }
         }
         if let selection = view.selectionBehavior as? UICalendarSelectionSingleDate,
            normalized(selection.selectedDate) != selected {
@@ -133,15 +151,20 @@ struct MeetingCalendar: UIViewRepresentable {
 
     final class Coordinator: NSObject, UICalendarViewDelegate, UICalendarSelectionSingleDateDelegate {
         var parent: MeetingCalendar
-        var days: Set<DateComponents> = []
+        /// Days with meetings, as `MeetingCalendar.key` numbers.
+        var days: Set<Int> = []
+        /// The same days as date components, to work out which dots to redraw.
+        var dayComponents: Set<DateComponents> = []
+        /// Whether every meeting day's dot has been asked for again since the calendar appeared.
+        var hasDrawnDots = false
 
         init(parent: MeetingCalendar) {
             self.parent = parent
         }
 
         func calendarView(_ calendarView: UICalendarView, decorationFor dateComponents: DateComponents) -> UICalendarView.Decoration? {
-            let day = DateComponents(year: dateComponents.year, month: dateComponents.month, day: dateComponents.day)
-            return days.contains(day) ? .default(color: UIColor(Theme.brand), size: .medium) : nil
+            guard let key = MeetingCalendar.key(dateComponents), days.contains(key) else { return nil }
+            return .default(color: UIColor(Theme.brand), size: .medium)
         }
 
         func dateSelection(_ selection: UICalendarSelectionSingleDate, didSelectDate dateComponents: DateComponents?) {
