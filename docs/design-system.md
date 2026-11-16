@@ -168,4 +168,4 @@ Below the document:
 
 ### 6. Settings
 - Header card: app icon, "Clear Notes", "Private by design: everything stays on this iPhone"
-- Grouped cards (not the stock form): Privacy (on-device transcription, consent reminder, identify speakers), Speaker models (status, size, Download button), This iPhone (capability status rows), About
+- Grouped cards (not the stock form): Privacy (on-device transcription, consent reminder, identify speakers), Speaker models (built into the app: status only, nothing to download), This iPhone (capability status rows), About

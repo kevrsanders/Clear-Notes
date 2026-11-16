@@ -5,7 +5,8 @@ import FluidAudio
 
 /// A second, more accurate transcription of the kept recording after the meeting, using NVIDIA's
 /// Parakeet speech model on the iPhone (through FluidAudio). The live transcript is replaced by
-/// this one. The model is a one-off download of about 450 MB, and nothing leaves the iPhone.
+/// this one. The model is a one-off download of about 450 MB from Hugging Face, made only when the
+/// user turns the setting on; nothing from the meeting leaves the iPhone.
 actor AccurateTranscriber {
     static let shared = AccurateTranscriber()
 
@@ -35,11 +36,21 @@ actor AccurateTranscriber {
     }
     #endif
 
-    /// Downloads the model once and loads it. Safe to call again; later calls return straight away.
-    func prepare() async throws {
+    /// Loads the model. With `allowDownload` (only when the user turns the setting on) it's
+    /// downloaded first if needed; otherwise downloads stay blocked, and a missing model is an
+    /// error rather than a download nobody asked for. Safe to call again; later calls return
+    /// straight away.
+    func prepare(allowDownload: Bool = false) async throws {
         #if canImport(FluidAudio)
         guard manager == nil else { return }
-        let models = try await AsrModels.downloadAndLoad(version: Self.version)
+        let models: AsrModels
+        if allowDownload {
+            ModelDownloads.isBlocked = false
+            defer { ModelDownloads.isBlocked = true }
+            models = try await AsrModels.downloadAndLoad(version: Self.version)
+        } else {
+            models = try await AsrModels.downloadAndLoad(version: Self.version)
+        }
         let loaded = AsrManager(config: .default)
         try await loaded.loadModels(models)
         manager = loaded

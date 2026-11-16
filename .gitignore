@@ -154,3 +154,12 @@ xcuserdata/
 DerivedData/
 *.xcuserstate
 ios/ClearNotes/Info.plist
+
+# Speaker models: fetched before each build by ios/scripts/fetch_speaker_models.py and built into
+# the app, not kept in git.
+ios/SpeakerModels/
+ios/SpeakerModels.partial/
+ios/SpeakerModels.manifest.json
+
+# Python
+__pycache__/
