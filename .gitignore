@@ -160,3 +160,6 @@ ios/ClearNotes/Info.plist
 ios/SpeakerModels/
 ios/SpeakerModels.partial/
 ios/SpeakerModels.manifest.json
+
+# Python
+__pycache__/
