@@ -6,7 +6,9 @@ import Speech
 /// on Apple Watch, which arrive without a live transcript.
 ///
 /// Uses the more accurate Parakeet model when it's downloaded, else Apple's SpeechAnalyzer on
-/// iOS 26, else the older on-device speech recogniser.
+/// iOS 26 (always on the iPhone), else the older speech recogniser. That one only uses Apple's
+/// servers when the iPhone can't recognise the language itself and Transcribe on this iPhone only
+/// is off, as for live transcripts.
 enum FileTranscriber {
     enum Outcome {
         /// `improved` when it came from the more accurate model, so that pass isn't run again.
@@ -84,7 +86,21 @@ enum FileTranscriber {
     }
     #endif
 
-    // MARK: - Earlier iOS: the on-device speech recogniser
+    // MARK: - Earlier iOS: the speech recogniser
+
+    /// Settings → Transcribe on this iPhone only (on unless the user turned it off).
+    static var onDeviceOnly: Bool {
+        UserDefaults.standard.object(forKey: SettingsKeys.requireOnDevice) as? Bool ?? true
+    }
+
+    /// Whether the recogniser must work on the iPhone. It does whenever it can. When it can't, and
+    /// the user wants transcription kept on the iPhone, the recording isn't sent to Apple's servers:
+    /// it fails with the same message as a live recording.
+    static func recogniseOnDevice(supported: Bool, onDeviceOnly: Bool) throws -> Bool {
+        if supported { return true }
+        if onDeviceOnly { throw RecorderError.onDeviceUnsupported }
+        return false
+    }
 
     private static func recogniserSegments(in url: URL) async throws -> [TranscriptSegment] {
         guard let recognizer = SFSpeechRecognizer(locale: .current) ?? SFSpeechRecognizer() else { return [] }
@@ -92,9 +108,10 @@ enum FileTranscriber {
         request.shouldReportPartialResults = false
         request.addsPunctuation = true
         request.taskHint = .dictation
-        if recognizer.supportsOnDeviceRecognition {
-            request.requiresOnDeviceRecognition = true
-        }
+        request.requiresOnDeviceRecognition = try recogniseOnDevice(
+            supported: recognizer.supportsOnDeviceRecognition,
+            onDeviceOnly: onDeviceOnly
+        )
         let words: [TimedWord] = try await withCheckedThrowingContinuation { continuation in
             let once = ResumeOnce()
             _ = recognizer.recognitionTask(with: request) { result, error in

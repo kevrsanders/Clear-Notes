@@ -253,7 +253,6 @@ enum MeetingProcessor {
                 audioAt: RecordingStore.url(for: audioFileName),
                 expectedSpeakers: meeting.expectedSpeakers
             )
-            UserDefaults.standard.set(true, forKey: SettingsKeys.speakerModelsReady)
             let assigned = SpeakerAssigner.assign(meeting.segments, turns: turns)
             meeting.segments = assigned.segments
             meeting.speakers = voiceprintsAllowed(assigned.speakers)

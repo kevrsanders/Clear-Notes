@@ -28,10 +28,10 @@ protocol SpeakerSeparating: Sendable {
 }
 
 enum SpeakerSeparators {
-    /// Whether this build includes on-device speaker separation.
+    /// Whether this build includes on-device speaker separation, with its models built in.
     static var isSupported: Bool {
         #if canImport(FluidAudio)
-        true
+        BundledSpeakerModels.isAvailable
         #else
         false
         #endif
@@ -39,23 +39,16 @@ enum SpeakerSeparators {
 
     static func best() -> SpeakerSeparating? {
         #if canImport(FluidAudio)
-        FluidSpeakerSeparator()
+        isSupported ? FluidSpeakerSeparator() : nil
         #else
         nil
-        #endif
-    }
-
-    /// Downloads the speaker models (once) so the first meeting doesn't have to wait.
-    /// Only model files are downloaded; no meeting data leaves the iPhone.
-    static func prepareModels() async throws {
-        #if canImport(FluidAudio)
-        try await OfflineDiarizerManager().prepareModels()
         #endif
     }
 }
 
 #if canImport(FluidAudio)
-/// On-device speaker separation using FluidAudio's Core ML models (pyannote-based).
+/// On-device speaker separation using FluidAudio's Core ML models (pyannote-based), which are
+/// built into the app: nothing is downloaded.
 struct FluidSpeakerSeparator: SpeakerSeparating {
     func separate(audioAt url: URL, expectedSpeakers: Int?) async throws -> [SpeakerTurn] {
         var samples = try AudioSamples.load(from: url)
@@ -75,8 +68,15 @@ struct FluidSpeakerSeparator: SpeakerSeparating {
             config.clustering.threshold = 0.55
         }
         let manager = OfflineDiarizerManager(config: config)
-        try await manager.prepareModels()
-        let result = try await manager.process(audio: samples)
+        let models = try await BundledSpeakerModels.load()
+        manager.initialize(models: models)
+        let result: DiarizationResult
+        do {
+            result = try await manager.process(audio: samples)
+        } catch OfflineDiarizationError.noSpeechDetected {
+            // Shown as "No separate voices were found", not as an error.
+            return []
+        }
         return result.segments.map {
             SpeakerTurn(
                 speaker: $0.speakerId,

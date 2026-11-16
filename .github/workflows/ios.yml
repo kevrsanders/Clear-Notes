@@ -48,6 +48,20 @@ jobs:
             xcodebuild -downloadPlatform watchOS
           fi
 
+      # The speaker-identification models are built into the app, so iPhones never download
+      # them. They're fetched here, on the build machine, from one fixed version on Hugging Face,
+      # checked against its hashes, and kept between runs.
+      - name: Restore speaker models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios/SpeakerModels
+            ios/SpeakerModels.manifest.json
+          key: speaker-models-${{ hashFiles('ios/scripts/fetch_speaker_models.py') }}
+
+      - name: Fetch speaker models
+        run: python3 scripts/fetch_speaker_models.py
+
       - name: Generate the Xcode project
         run: |
           brew install xcodegen
@@ -161,6 +175,20 @@ jobs:
             xcodebuild -downloadPlatform watchOS
           fi
 
+      # The speaker-identification models are built into the app, so iPhones never download
+      # them. They're fetched here, on the build machine, from one fixed version on Hugging Face,
+      # checked against its hashes, and kept between runs.
+      - name: Restore speaker models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios/SpeakerModels
+            ios/SpeakerModels.manifest.json
+          key: speaker-models-${{ hashFiles('ios/scripts/fetch_speaker_models.py') }}
+
+      - name: Fetch speaker models
+        run: python3 scripts/fetch_speaker_models.py
+
       - name: Generate the Xcode project with your bundle ID
         run: |
           brew install xcodegen
@@ -215,6 +243,18 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGNING_ALLOWED=NO \
             CURRENT_PROJECT_VERSION="${{ github.run_number }}"
+
+      # Speaker identification depends on these; a build without them mustn't reach testers.
+      - name: Check the speaker models are in the app
+        run: |
+          APP="$RUNNER_TEMP/ClearNotes.xcarchive/Products/Applications/ClearNotes.app"
+          for name in Segmentation.mlmodelc FBank.mlmodelc Embedding.mlmodelc PldaRho.mlmodelc plda-parameters.json; do
+            if [ ! -e "$APP/SpeakerModels/$name" ]; then
+              echo "::error::$name is missing from the app"
+              exit 1
+            fi
+          done
+          du -sh "$APP/SpeakerModels"
 
       - name: Upload to TestFlight
         run: |

@@ -5,6 +5,9 @@ import UIKit
 @main
 struct ClearNotesApp: App {
     init() {
+        // Nothing is downloaded unless the user asks (Settings → More accurate transcripts).
+        ModelDownloads.blockByDefault()
+        Task.detached(priority: .background) { BundledSpeakerModels.removeOldDownload() }
         // Recordings from Apple Watch, and taps on meeting reminders, can arrive at any time.
         WatchLink.shared.activate()
         ReminderHandler.shared.register()
