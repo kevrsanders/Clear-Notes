@@ -8,7 +8,7 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
 
 - **Live capture**: big timer, level meter and a live transcript. Pause and resume. Recording continues when the screen locks, and pauses automatically for phone calls.
 - **On-device transcription**: on iOS 26 it uses Apple's SpeechAnalyzer/SpeechTranscriber, a long-form model built for meetings and people further from the phone. On earlier versions it uses the older speech recogniser with `requiresOnDeviceRecognition`; a setting (on by default) refuses to record if your language can't be transcribed on the device.
-- **More accurate transcripts** (Settings → Transcription, off by default): after each meeting, the kept recording is transcribed again on the iPhone with NVIDIA's Parakeet model (through FluidAudio: the English-only model for English, the multilingual one otherwise) and replaces the live transcript. It's a one-off download of about 450 MB, and turning it off deletes it. Older meetings with a kept recording have **Improve transcript** in the ⋯ menu; speaker names are kept, and actions keep their links. If the second pass fails or loses most of the words, the live transcript is kept.
+- **More accurate transcripts** (Settings → Transcription, off by default): after each meeting, the kept recording is transcribed again on the iPhone with NVIDIA's Parakeet model (through FluidAudio: the English-only model for English, the multilingual one otherwise) and replaces the live transcript. It's a one-off download of about 450 MB from Hugging Face, which hosts the model, made only when you turn it on. Like any website, Hugging Face sees the iPhone's internet address. Turning it off deletes it. Older meetings with a kept recording have **Improve transcript** in the ⋯ menu; speaker names are kept, and actions keep their links. If the second pass fails or loses most of the words, the live transcript is kept.
 - **My words** (Settings → Transcription): names and terms to spell correctly. Invited people, named speakers and your own name are added automatically. Corrections are cautious: the same letters ignoring case and spaces ("in tune" → "Intune"), except short dictionary words (so "it" never becomes "IT"), or a near miss on a word that isn't in the dictionary ("Jayson" → "Jason").
 - **Edit a line**: hold a transcript line → *Edit text*.
 - **Distant voices**: the transcriber gets a gentle automatic boost (up to about +12 dB, only while someone is speaking, with a limiter near full scale). The kept recording is the untouched microphone audio. The app uses a plugged-in USB or headset microphone if there is one, otherwise the iPhone's bottom microphone in its all-direction pattern (the back microphone faces the table when the phone lies screen-up).
@@ -20,7 +20,7 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
 - **Fixing speakers by hand**: long-press a line → *Change speaker…* to move it to another speaker or a **New speaker**. To fix a stretch where two voices were confused, tap **Select lines** above the transcript (or long-press a line → *Select lines…*). Tap lines to select them, or hold a line to select everything from the last one you tapped up to it, then tap **Change speaker** to move them all at once. The speaker list opens as a dialog, so it isn't disturbed by playback. Tapping a line plays just that line; *Play from here* carries on.
 - **Recently deleted**: a meeting card's menu (hold the card) and ⋯ inside a meeting both offer two ways to delete: **Move to Recently deleted** (with **Undo** for a few seconds afterwards) or **Delete permanently** (gone straight away, recording and all). Meetings moved there stay in **Settings → Recently deleted** for 7 days, recording included, where they can be restored or deleted for good; after 7 days they're deleted for good automatically.
 - **Playback**: a player bar on each meeting, with 1×/1.5×/2× speed. Tap any transcript line to hear that moment, or play a speaker's lines while naming them. **Settings → Keep recordings** sets how long audio is kept; "Delete recording" removes it sooner. Recordings are excluded from backups.
-- **Speaker separation**: after you finish, [FluidAudio](https://github.com/FluidInference/FluidAudio) (pyannote models running on the iPhone's Neural Engine) finds who spoke when. Word timings from the transcript split each line at speaker changes. Clips under 3 seconds are skipped, and short clips are padded with silence.
+- **Speaker separation**: after you finish, [FluidAudio](https://github.com/FluidInference/FluidAudio) (pyannote models running on the iPhone's Neural Engine) finds who spoke when. The models are built into the app, so nothing is downloaded and no one is contacted. Word timings from the transcript split each line at speaker changes. Clips under 3 seconds are skipped, and short clips are padded with silence.
 - **One-tap speaker naming**: tap a speaker to see what they said and name them. One name updates every line. Suggestions come from your own name, people invited to the meeting and people in earlier meetings. "Same person as" merges two voices, and long-pressing a line moves it to another speaker. Once speakers are named, "I'll send it" is credited to whoever said it.
 - **Calendar** (Settings → Calendar, off by default): reads today's events from Apple's Calendar app, including a work account added in iOS Settings. The home screen shows the meeting happening now, or the next one today, with one-tap recording. Meetings with other people invited come before blocks like WFH or Focus time. Only your main calendar (and each work account's own "Calendar") is used by default. Work accounts such as NHSmail often sync many colleagues' shared calendars, and apps can see them even when they're hidden in Apple's Calendar app. **Choose calendars** turns others on, such as a team calendar, and lists today's events under each calendar. Shared calendar names like "SMITH, Jane (Trust)" show as "Jane Smith". Events from a calendar other than your main one show its name. Recordings take the event's title and invited people, with you listed first whether you organised the meeting or were invited (by the calendar's name for you, or your name from Settings). Invited people are suggested first when naming speakers, an action owner like "Priya" becomes the invited "Priya Sharma" (when only one invitee has that first name), and the Teams link is kept for importing the Teams transcript later. Directory names such as "SMITH, Jane (Trust)" are tidied to "Jane Smith". All-day events, timed blocks of 6 hours or more ("Working from home 09:00–17:00", leave), and cancelled or declined events are ignored. Calendars shared with you can reach the iPhone through the work account, iCloud or a subscribed link. They stay off unless you turn them on, so other people's meetings aren't offered or linked. Only the title, invited names and Teams link are saved with the meeting. Outlook's own *Sync Calendars* also works where Intune allows it.
 - **Last time** (meetings in a series): when a repeating calendar meeting, or one with the same title, was recorded on an earlier day, the Up next card shows "Last time · Tue 27 Oct · 3 open actions". The recording screen has a **Last time** button, and the meeting's Overview has a **Last time** card. Each shows the previous summary, decisions and actions; tick actions off as people report them done.
@@ -58,10 +58,21 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
 - **Share or copy** a meeting as Markdown (summary, decisions, actions, notes and transcript).
 - **Consent reminder** before each recording, which you can turn off.
 
+## What Clear Notes connects to
+
+For a DPIA or privacy notice. Clear Notes has no account, server, analytics, ads, crash reporting, remote fonts or remote images, and the speaker models are built in. In normal use it contacts no one. The exceptions:
+
+| Who | When | What they see |
+|---|---|---|
+| Hugging Face | Only when you turn on **More accurate transcripts**: a one-off download of about 450 MB | The iPhone's internet address, as with any download. No meeting data |
+| Apple's speech service | Only if **Transcribe on this iPhone only** is turned off *and* the iPhone can't transcribe the language itself | The meeting audio (Apple's terms apply) |
+| Apple | iOS itself downloads speech and Apple Intelligence language assets, and runs TestFlight and the App Store | Covered by Apple's terms, as for any app |
+| Whoever you share with | Only what you choose in the share sheet | What you share |
+
 ## Requirements
 
 - A Mac with **Xcode 16** or later. Use **Xcode 26** to get Apple Intelligence notes and the Liquid Glass look; older Xcode builds fall back to basic extraction and translucent materials automatically.
-- An internet connection the first time you build (Xcode fetches the FluidAudio package) and the first time speakers are identified (the speaker models, roughly tens of MB, download once).
+- An internet connection the first time you build: Xcode fetches the FluidAudio package, and `scripts/fetch_speaker_models.py` fetches the speaker models (tens of MB) from Hugging Face to build into the app. The iPhone never downloads them.
 - An iPhone running **iOS 17** or later. Apple Intelligence notes need a supported iPhone on iOS 26+.
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) to generate the Xcode project: `brew install xcodegen`.
 
@@ -69,6 +80,7 @@ Design: see [docs/design-system.md](../docs/design-system.md) and the mockups in
 
 ```bash
 cd ios
+python3 scripts/fetch_speaker_models.py   # once: the speaker models built into the app
 xcodegen generate        # creates ClearNotes.xcodeproj from project.yml
 open ClearNotes.xcodeproj
 ```
@@ -91,6 +103,7 @@ GitHub Actions builds, tests and uploads the app to TestFlight, so no Mac is nee
 ```
 ios/
 ├── project.yml                  XcodeGen spec (targets, Info.plist keys, permissions)
+├── scripts/fetch_speaker_models.py   Fetches the speaker models into SpeakerModels/ (not in git) to build into the app
 ├── ClearNotes/
 │   ├── App/                     App entry and tab bar
 │   ├── Models/                  SwiftData models: Meeting, ActionItem

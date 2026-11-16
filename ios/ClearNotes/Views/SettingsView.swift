@@ -7,7 +7,6 @@ enum SettingsKeys {
     static let showConsentReminder = "showConsentReminder"
     static let requireOnDevice = "requireOnDeviceTranscription"
     static let identifySpeakers = "identifySpeakers"
-    static let speakerModelsReady = "speakerModelsReady"
     static let myName = "myName"
     static let audioRetention = "audioRetentionDays"
     static let reduceEchoAndNoise = "reduceEchoAndNoise"
@@ -61,7 +60,6 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.showConsentReminder) private var showConsentReminder = true
     @AppStorage(SettingsKeys.requireOnDevice) private var requireOnDevice = true
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
-    @AppStorage(SettingsKeys.speakerModelsReady) private var speakerModelsReady = false
     @AppStorage(SettingsKeys.myName) private var myName = ""
     @AppStorage(SettingsKeys.audioRetention) private var audioRetention = AudioRetention.default.rawValue
     @AppStorage(SettingsKeys.reduceEchoAndNoise) private var reduceEchoAndNoise = false
@@ -78,8 +76,6 @@ struct SettingsView: View {
     @State private var calendarBlocked = CalendarReader.isBlocked
     @Query private var voices: [VoiceProfile]
     @Query(filter: #Predicate<Meeting> { $0.deletedAt != nil }) private var deletedMeetings: [Meeting]
-    @State private var isDownloading = false
-    @State private var downloadError: String?
 
     private var onDeviceSpeechSupported: Bool {
         SFSpeechRecognizer()?.supportsOnDeviceRecognition ?? false
@@ -123,7 +119,7 @@ struct SettingsView: View {
                         toggle("Remind me to tell attendees", systemImage: "person.wave.2", isOn: $showConsentReminder)
                     }
 
-                    section("Transcription", footer: "More accurate transcripts: after each meeting, the recording is transcribed again on this iPhone with NVIDIA's Parakeet model, which is more accurate than the live transcript, and the live one is replaced. It's a one-off download of about 450 MB; turning it off deletes it. My words: names and terms to spell correctly, such as colleagues' names and acronyms. People invited to the meeting are included automatically.") {
+                    section("Transcription", footer: "More accurate transcripts: after each meeting, the recording is transcribed again on this iPhone with NVIDIA's Parakeet model, which is more accurate than the live transcript, and the live one is replaced. It's a one-off download of about 450 MB from Hugging Face, which hosts the model; like any website, it sees your iPhone's internet address. Turning it off deletes it. My words: names and terms to spell correctly, such as colleagues' names and acronyms. People invited to the meeting are included automatically.") {
                         Toggle(isOn: accurateToggle) {
                             Label {
                                 Text("More accurate transcripts")
@@ -253,7 +249,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    section("Speakers", footer: "Voices are separated on this iPhone after each meeting. The speaker models are downloaded once. No meeting data is sent. Remember voices (off by default) saves a voiceprint when you name someone, only with their agreement, so later meetings can suggest their name. Voiceprints are biometric data: check with your Information Governance team before using this with colleagues.") {
+                    section("Speakers", footer: "Voices are separated on this iPhone after each meeting, with speaker models built into Clear Notes: nothing is downloaded or sent. Remember voices (off by default) saves a voiceprint when you name someone, only with their agreement, so later meetings can suggest their name. Voiceprints are biometric data: check with your Information Governance team before using this with colleagues.") {
                         toggle("Identify speakers", systemImage: "person.2.wave.2", isOn: $identifySpeakers)
                             .disabled(!SpeakerSeparators.isSupported)
                         Divider()
@@ -332,7 +328,7 @@ struct SettingsView: View {
                 if isOn {
                     isDownloadingTranscriber = true
                     do {
-                        try await AccurateTranscriber.shared.prepare()
+                        try await AccurateTranscriber.shared.prepare(allowDownload: true)
                         accurateModelsReady = true
                     } catch {
                         accurateTranscripts = false
@@ -378,7 +374,7 @@ struct SettingsView: View {
         .cardStyle()
     }
 
-    @ViewBuilder
+    /// The speaker models are built into the app, so there's nothing to download.
     private var modelsRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "cpu")
@@ -386,40 +382,17 @@ struct SettingsView: View {
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Speaker models")
-                Text(modelStatus)
+                Text(SpeakerSeparators.isSupported ? "Built into Clear Notes" : "Not included in this build")
                     .font(.footnote)
-                    .foregroundStyle(downloadError == nil ? Theme.textSecondary : Theme.warning)
+                    .foregroundStyle(Theme.textSecondary)
             }
             Spacer()
-            if isDownloading {
-                ProgressView()
-            } else if SpeakerSeparators.isSupported && !speakerModelsReady {
-                Button("Download") { Task { await downloadModels() } }
-                    .buttonStyle(PrimaryButtonStyle(compact: true))
-            } else if speakerModelsReady {
+            if SpeakerSeparators.isSupported {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Theme.success)
             }
         }
-    }
-
-    private var modelStatus: String {
-        if let downloadError { return downloadError }
-        if !SpeakerSeparators.isSupported { return "Not included in this build" }
-        if isDownloading { return "Downloading…" }
-        return speakerModelsReady ? "Ready on this iPhone" : "Downloaded automatically after your first meeting"
-    }
-
-    private func downloadModels() async {
-        isDownloading = true
-        downloadError = nil
-        do {
-            try await SpeakerSeparators.prepareModels()
-            speakerModelsReady = true
-        } catch {
-            downloadError = "Download failed. Check your connection and try again."
-        }
-        isDownloading = false
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Building blocks

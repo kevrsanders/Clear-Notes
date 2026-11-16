@@ -7,7 +7,9 @@ options:
 packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
-    from: 0.12.4
+    # Exact, because the speaker models built into the app (scripts/fetch_speaker_models.py) are
+    # the ones this version expects. Change both together.
+    exactVersion: 0.18.3
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -20,6 +22,11 @@ targets:
     sources:
       - ClearNotes
       - Shared
+      # The speaker-identification models, built into the app so iPhones never download them.
+      # Fetched by scripts/fetch_speaker_models.py, which must be run before generating the project.
+      - path: SpeakerModels
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: FluidAudio
       # The recording's Lock Screen and Dynamic Island controls.

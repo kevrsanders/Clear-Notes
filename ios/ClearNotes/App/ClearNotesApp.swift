@@ -4,6 +4,12 @@ import UIKit
 
 @main
 struct ClearNotesApp: App {
+    init() {
+        // Nothing is downloaded unless the user asks (Settings → More accurate transcripts).
+        ModelDownloads.blockByDefault()
+        Task.detached(priority: .background) { BundledSpeakerModels.removeOldDownload() }
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
